@@ -1,0 +1,46 @@
+package utils
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+// 颜色定义
+const (
+	ColorRed    = "\033[31m"
+	ColorGreen  = "\033[32m"
+	ColorYellow = "\033[33m"
+	ColorBlue   = "\033[34m"
+	ColorReset  = "\033[0m"
+)
+
+// PrintError 打印错误信息（红色）
+func PrintError(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Fprintf(os.Stderr, "%s[ERROR]%s %s\n", ColorRed, ColorReset, msg)
+}
+
+// PrintSuccess 打印成功信息（绿色）
+func PrintSuccess(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Fprintf(os.Stdout, "%s[SUCCESS]%s %s\n", ColorGreen, ColorReset, msg)
+}
+
+// PrintInfo 打印信息（蓝色）
+func PrintInfo(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Fprintf(os.Stdout, "%s[INFO]%s %s\n", ColorBlue, ColorReset, msg)
+}
+
+// PrintWarning 打印警告信息（黄色）
+func PrintWarning(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Fprintf(os.Stdout, "%s[WARNING]%s %s\n", ColorYellow, ColorReset, msg)
+}
+
+// PrintBanner 打印横幅信息
+func PrintBanner(text string) {
+	border := strings.Repeat("=", len(text)+4)
+	fmt.Printf("\n%s\n  %s  \n%s\n\n", border, text, border)
+}
