@@ -69,9 +69,6 @@ cluster:
     version: "1.25.0" # Kubernetes版本
     podNetworkCidr: "10.244.0.0/16" # Pod网络CIDR
     serviceCidr: "10.96.0.0/12" # Service网络CIDR
-    containerdVersion: "1.6.8" # Containerd版本
-    runcVersion: "v1.1.3" # runc版本
-    cniVersion: "v1.0.0" # CNI插件版本
 ```
 
 ## 5. 最佳实践

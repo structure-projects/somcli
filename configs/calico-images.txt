@@ -1,0 +1,5 @@
+registry.cn-beijing.aliyuncs.com/kubesphereio/cni:v3.23.2
+registry.cn-beijing.aliyuncs.com/kubesphereio/kube-controllers:v3.23.2
+registry.cn-beijing.aliyuncs.com/kubesphereio/node:v3.23.2
+registry.cn-beijing.aliyuncs.com/kubesphereio/pod2daemon-flexvol:v3.23.2
+registry.cn-beijing.aliyuncs.com/kubesphereio/typha:v3.23.2

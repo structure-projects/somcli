@@ -1,0 +1,10 @@
+
+kubeimage/kube-proxy-amd64:v1.28.2
+kubeimage/kube-controller-manager-amd64:v1.28.2
+kubeimage/kube-apiserver-amd64:v1.28.2
+kubeimage/kube-scheduler-amd64:v1.28.2
+registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.6
+registry.cn-hangzhou.aliyuncs.com/google_containers/coredns:1.8.6
+registry.cn-hangzhou.aliyuncs.com/google_containers/etcd:3.4.13-0
+
+

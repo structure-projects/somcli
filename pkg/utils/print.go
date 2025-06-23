@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,12 +23,17 @@ import (
 
 // 颜色定义
 const (
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
-	ColorBlue   = "\033[34m"
-	ColorReset  = "\033[0m"
+	ColorRed     = "\033[31m"
+	ColorGreen   = "\033[32m"
+	ColorYellow  = "\033[33m"
+	ColorBlue    = "\033[34m"
+	ColorMagenta = "\033[35m"
+	ColorCyan    = "\033[36m"
+	ColorReset   = "\033[0m"
 )
+
+// DebugMode 控制是否输出调试信息
+var DebugMode = false
 
 // PrintError 打印错误信息（红色）
 func PrintError(format string, a ...interface{}) {
@@ -58,4 +63,28 @@ func PrintWarning(format string, a ...interface{}) {
 func PrintBanner(text string) {
 	border := strings.Repeat("=", len(text)+4)
 	fmt.Printf("\n%s\n  %s  \n%s\n\n", border, text, border)
+}
+
+// PrintStage 打印阶段信息（青色），用于标识重要阶段
+func PrintStage(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Fprintf(os.Stdout, "%s[STAGE]%s %s\n", ColorCyan, ColorReset, msg)
+}
+
+// PrintDebug 打印调试信息（洋红色），仅在DebugMode为true时输出
+func PrintDebug(format string, a ...interface{}) {
+	if DebugMode {
+		msg := fmt.Sprintf(format, a...)
+		fmt.Fprintf(os.Stdout, "%s[DEBUG]%s %s\n", ColorMagenta, ColorReset, msg)
+	}
+}
+
+// SetDebugMode 设置调试模式开关
+func SetDebugMode(debug bool) {
+	DebugMode = debug
+}
+
+// IsDebugMode 返回当前调试模式状态
+func IsDebugMode() bool {
+	return DebugMode
 }

@@ -1,0 +1,25 @@
+resources:
+  - name: "kubectl"
+    method: "binary"
+    source_url: "https://storage.googleapis.com/kubernetes-release/release/v1.28.0/bin/linux/amd64/kubectl"
+    post_install:
+      - "chmod +x /usr/local/bin/kubectl"
+    pre_install:
+      - "echo download $test"
+    hosts:
+      - "127.0.0.1"
+  - name: "helm"
+    method: "container" # 容器类型前提是先安装了容器
+    image: "alpine/helm:3.12.0"
+    hosts:
+      - "127.0.0.1"
+  - name: "jq"
+    method: "package"
+    package: "jq"
+    hosts:
+      - "127.0.0.1"
+hosts:
+  - host: "tools"
+    ip: "127.0.0.1"
+    role: "manager"
+    sshKey: "~/.ssh/id_rsa"

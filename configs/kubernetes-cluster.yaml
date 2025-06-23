@@ -1,0 +1,194 @@
+## 下载项目定义
+version: "1.0"
+kind: Download
+resources:
+  - name: "docker"
+    version: "24.0.6"
+    method: "binary"
+    urls:
+      - "https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz"
+    target: "{{.Name}}-{{.Version}}.tgz"
+    post_install:
+      - "echo 执行安装脚本-携带参数"
+---
+## 资源定义
+version: "1.0"
+kind: Resource
+resources:
+  # 1. 基础依赖
+  - name: "base-dependencies"
+    version: "1.0"
+    method: "package"
+    post_install:
+      - "sudo yum install -y socat conntrack ebtables ipset"
+      - "sudo swapoff -a"
+      - "sudo sed -i '/ swap / s/^/#/' /etc/fstab"
+      - "sudo modprobe overlay"
+      - "sudo modprobe br_netfilter"
+      - "sudo sysctl --system"
+
+  # 2. Containerd容器运行时
+  - name: "containerd"
+    version: "1.7.0"
+    method: "binary"
+    files:
+      - "{{.CacheDir}}/containerd/containerd-{{.Version}}-linux-amd64.tar.gz"
+      - "{{.CacheDir}}/containerd/runc.amd64"
+      - "{{.CacheDir}}/containerd/cni-plugins-linux-amd64-v1.2.0.tgz"
+    post_install:
+      - "sudo tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz"
+      - "sudo install -m 755 {{.CacheDir}}/runc.amd64 /usr/local/sbin/runc"
+      - "sudo mkdir -p /opt/cni/bin"
+      - "sudo tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-amd64-v1.2.0.tgz"
+      - "sudo mkdir -p /etc/containerd"
+      - "sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null"
+      - "sudo sed -i 's|k8s.gcr.io|registry.k8s.io|g' /etc/containerd/config.toml"
+      - 'sudo sed -i ''s|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.9"|g'' /etc/containerd/config.toml'
+      - "sudo systemctl daemon-reload"
+      - "sudo systemctl enable --now containerd"
+    extra_files:
+      "/etc/systemd/system/containerd.service": |
+        [Unit]
+        Description=containerd container runtime
+        Documentation=https://containerd.io
+        After=network.target local-fs.target
+
+        [Service]
+        ExecStartPre=-/sbin/modprobe overlay
+        ExecStart=/usr/local/bin/containerd
+        Restart=always
+        RestartSec=5
+        Delegate=yes
+        KillMode=process
+        OOMScoreAdjust=-999
+        LimitNOFILE=1048576
+        LimitNPROC=infinity
+        LimitCORE=infinity
+
+        [Install]
+        WantedBy=multi-user.target
+
+  # 3. Kubernetes组件
+  - name: "kubernetes"
+    version: "1.28.0"
+    method: "binary"
+    files:
+      - "{{.CacheDir}}/kubernetes/v{{.Version}}/kubeadm"
+      - "{{.CacheDir}}/kubernetes/v{{.Version}}/kubelet"
+      - "{{.CacheDir}}/kubernetes/v{{.Version}}/kubectl"
+      - "{{.CacheDir}}/kubernetes/v{{.Version}}/kubelet.service"
+      - "{{.CacheDir}}/kubernetes/v{{.Version}}/kubernetes-images.tar"
+    post_install:
+      - "sudo install -o root -g root -m 0755 {{.CacheDir}}/kubeadm /usr/local/bin/kubeadm"
+      - "sudo install -o root -g root -m 0755 {{.CacheDir}}/kubelet /usr/local/bin/kubelet"
+      - "sudo install -o root -g root -m 0755 {{.CacheDir}}/kubectl /usr/local/bin/kubectl"
+      - "sudo mkdir -p /etc/systemd/system/kubelet.service.d"
+      - "sudo install -o root -g root -m 0644 {{.CacheDir}}/kubelet.service /etc/systemd/system/kubelet.service"
+      - "sudo ctr -n=k8s.io images import {{.CacheDir}}/k8s-images.tar"
+      - "sudo systemctl daemon-reload"
+      - "sudo systemctl enable --now kubelet"
+
+  # 4. Master节点初始化
+  - name: "k8s-master-init"
+    version: "1.28.0"
+    method: "script"
+    roles: ["master"]
+    post_install:
+      - "echo 'apiVersion: kubeadm.k8s.io/v1beta3\nkind: InitConfiguration\nnodeRegistration:\n  criSocket: \"unix:///var/run/containerd/containerd.sock\"\n---\napiVersion: kubeadm.k8s.io/v1beta3\nkind: ClusterConfiguration\nkubernetesVersion: v{{.Version}}\nimageRepository: registry.k8s.io\nnetworking:\n  podSubnet: \"10.244.0.0/16\"' > kubeadm-config.yaml"
+      - "sudo kubeadm init --config kubeadm-config.yaml --upload-certs"
+      - "mkdir -p $HOME/.kube"
+      - "sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"
+      - "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+
+  # 5. 网络插件(Flannel)
+  - name: "flannel"
+    version: "0.22.0"
+    method: "manifest"
+    roles: ["master"]
+    files:
+      - "{{.CacheDir}}/network/flannel-v{{.Version}}.yml"
+    post_install:
+      - "kubectl apply -f {{.CacheDir}}/flannel-v{{.Version}}.yml"
+
+  # 6. Worker节点加入
+  - name: "k8s-worker-join"
+    version: "1.28.0"
+    method: "script"
+    roles: ["worker"]
+    pre_install:
+      - "'kubeadm token create --print-join-command' > /tmp/join-command"
+    post_install:
+      - "sudo $(cat /tmp/join-command)"
+---
+## 应用调度定义
+version: "1.0"
+kind: App
+Apps:
+  - name: kubernetes
+    runtime: host
+    hosts:
+      - ip: "172.0.0.1"
+        roles:
+          - "master"
+    flows:
+      - name: "安装基础依赖"
+        resource: "base-dependencies"
+        nodes: "all"
+
+      - name: "安装容器运行时"
+        resource: "containerd"
+        nodes: "all"
+
+      - name: "安装Kubernetes组件"
+        resource: "kubernetes"
+        nodes: "all"
+
+      - name: "初始化Master节点"
+        resource: "k8s-master-init"
+        nodes: "role:master"
+
+      - name: "安装网络插件"
+        resource: "flannel"
+        nodes: "role:master"
+        depends_on: "k8s-master-init"
+
+      - name: "加入Worker节点"
+        resource: "k8s-worker-join"
+        nodes: "role:worker"
+        depends_on: "flannel"
+---
+version: "1.0"
+kind: Node
+nodes:
+  - host: "docker-host-01"
+    ip: "127.0.0.1"
+    user: root
+    roles:
+      - "master"
+      - "manager"
+    sshKey: "~/.ssh/id_rsa"
+  - host: "docker-host-02"
+    ip: "127.0.0.1"
+    user: root
+    roles:
+      - "master"
+    sshKey: "~/.ssh/id_rsa"
+---
+version: "1.0"
+kind: source
+sources:
+  - name: ios
+    url: path
+    type: install
+    script:
+      - "/scripts/CentosAliyunMirrors.sh"
+  - name: aliyun
+    url: path
+    type: install
+    script:
+      - "/scripts/CentosAliyunMirrors.sh"
+  - name: el
+    url: path
+    type: download
+    script:
+      - "/scripts/CentosAliyunMirrors.sh"

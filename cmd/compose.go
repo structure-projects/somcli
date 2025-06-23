@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -58,13 +58,13 @@ Examples:
 				}
 			}
 
-			installer := compose.NewInstaller(silent, viper.GetViper())
+			coomposeInstall := compose.NewComposeInstaller(silent, viper.GetViper())
 			if installPath != "" {
-				installer.SetInstallPath(installPath)
+				coomposeInstall.SetInstallPath(installPath)
 			}
 
 			filteredArgs := filterArgs(args, envFile != "")
-			if err := installer.Passthrough(filteredArgs); err != nil {
+			if err := coomposeInstall.Passthrough(filteredArgs); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -91,7 +91,7 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 				version = args[0]
 			}
 
-			installer := compose.NewInstaller(*silent, viper.GetViper())
+			installer := compose.NewComposeInstaller(*silent, viper.GetViper())
 			if *installPath != "" {
 				installer.SetInstallPath(*installPath)
 			}
@@ -103,11 +103,11 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 		Use:   "uninstall",
 		Short: "Uninstall Docker Compose",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			installer := compose.NewInstaller(*silent, viper.GetViper())
+			composeInstaller := compose.NewComposeInstaller(*silent, viper.GetViper())
 			if *installPath != "" {
-				installer.SetInstallPath(*installPath)
+				composeInstaller.SetInstallPath(*installPath)
 			}
-			return installer.Uninstall()
+			return composeInstaller.Uninstall()
 		},
 	}
 
@@ -115,12 +115,12 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 		Use:   "version",
 		Short: "Show Docker Compose version",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			installer := compose.NewInstaller(*silent, viper.GetViper())
+			composeInstaller := compose.NewComposeInstaller(*silent, viper.GetViper())
 			if *installPath != "" {
-				installer.SetInstallPath(*installPath)
+				composeInstaller.SetInstallPath(*installPath)
 			}
 
-			version, err := installer.Version()
+			version, err := composeInstaller.Version()
 			if err != nil {
 				return err
 			}
@@ -135,6 +135,7 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 	rootCmd.AddCommand(versionCmd)
 }
 
+// todo env file 提取到root上
 func filterArgs(args []string, hasEnvFile bool) []string {
 	var filtered []string
 	skipNext := false

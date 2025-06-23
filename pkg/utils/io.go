@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -165,4 +165,21 @@ func IsDirectory(path string) bool {
 		return false
 	}
 	return fileInfo.IsDir()
+}
+
+// WriteBytesToFile 将字节数据写入文件，如果文件已存在会被覆盖
+func WriteBytesToFile(filePath string, data []byte) error {
+	// 创建目录（如果不存在）
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// 创建并写入文件
+	err := os.WriteFile(filePath, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
 }

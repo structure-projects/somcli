@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/structure-projects/somcli/pkg/cluster"
+	"github.com/structure-projects/somcli/pkg/types"
 )
 
 // ResourceMapper 资源类型映射
@@ -59,7 +59,7 @@ func DetectResourceType(input string) (string, error) {
 }
 
 // GetClusterConfig 获取当前集群配置
-func GetClusterConfig() (*cluster.ClusterConfig, error) {
+func GetClusterConfig() (*types.ClusterConfig, error) {
 	// 实现从本地缓存或配置文件中加载集群配置
 	return nil, nil
 }

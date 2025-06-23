@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/structure-projects/somcli/pkg/docker"
+	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
 )
 
@@ -191,12 +192,12 @@ Examples:
 }
 
 // getTargetNodes 获取目标节点列表
-func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey string) ([]docker.RemoteNode, error) {
-	var nodes []docker.RemoteNode
+func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey string) ([]types.RemoteNode, error) {
+	var nodes []types.RemoteNode
 
 	// 如果既没有指定节点文件也没有指定节点IP，则默认为本地节点
 	if nodesFile == "" && len(nodeIPs) == 0 {
-		return []docker.RemoteNode{{IsLocal: true}}, nil
+		return []types.RemoteNode{{IsLocal: true}}, nil
 	}
 
 	// 从文件加载节点配置
@@ -211,7 +212,7 @@ func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey stri
 	// 从命令行参数添加节点
 	if len(nodeIPs) > 0 {
 		for _, ip := range nodeIPs {
-			nodes = append(nodes, docker.RemoteNode{
+			nodes = append(nodes, types.RemoteNode{
 				IP:     ip,
 				User:   user,
 				SSHKey: sshKey,
@@ -223,7 +224,7 @@ func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey stri
 }
 
 // loadNodesFromFile 从YAML文件加载节点配置
-func loadNodesFromFile(filePath string) ([]docker.RemoteNode, error) {
-	// TODO: 实现YAML文件解析逻辑
+func loadNodesFromFile(filePath string) ([]types.RemoteNode, error) {
+	utils.LoadConfig(filePath)
 	return nil, fmt.Errorf("YAML node config loading not implemented yet")
 }

@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,7 +39,7 @@ var (
 	caPath        string
 )
 
-var installCmd = &cobra.Command{
+var registryInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install Harbor registry",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -187,13 +187,13 @@ func init() {
 	syncCmd.MarkFlagRequired("image-list")
 
 	// install命令参数 - 确保短标志不重复
-	installCmd.Flags().StringVarP(&harborVersion, "version", "v", "v2.5.0", "Harbor version to install (e.g. v2.5.0)")
-	installCmd.Flags().StringVarP(&harborHost, "hostname", "H", "", "Harbor hostname (e.g. harbor.example.com) (required)") // 将 'h' 改为 'H'
-	installCmd.Flags().StringVar(&caPath, "ca-path", "", "Path to CA certificate files directory")
-	installCmd.MarkFlagRequired("hostname")
+	registryInstallCmd.Flags().StringVarP(&harborVersion, "version", "v", "v2.5.0", "Harbor version to install (e.g. v2.5.0)")
+	registryInstallCmd.Flags().StringVarP(&harborHost, "hostname", "H", "", "Harbor hostname (e.g. harbor.example.com) (required)") // 将 'h' 改为 'H'
+	registryInstallCmd.Flags().StringVar(&caPath, "ca-path", "", "Path to CA certificate files directory")
+	registryInstallCmd.MarkFlagRequired("hostname")
 
 	RegistryCmd.AddCommand(syncCmd)
-	RegistryCmd.AddCommand(installCmd)
+	RegistryCmd.AddCommand(registryInstallCmd)
 	RegistryCmd.AddCommand(unInstallCmd)
 	rootCmd.AddCommand(RegistryCmd)
 }

@@ -1,0 +1,848 @@
+/*
+Copyright 2023 Structure Projects
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+package cluster
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/structure-projects/somcli/pkg/docker"
+	"github.com/structure-projects/somcli/pkg/installer"
+	"github.com/structure-projects/somcli/pkg/types"
+	"github.com/structure-projects/somcli/pkg/utils"
+)
+
+const (
+	k8sBaseURL    = "https://storage.googleapis.com/kubernetes-release/release" // Kubernetes官方组件下载地址
+	k8sCacheDir   = "kubernetes"                                                // Kubernetes组件缓存目录
+	k8sComponents = "kubeadm kubelet kubectl"                                   // Kubernetes核心组件
+)
+
+// CreateK8sCluster 创建Kubernetes集群
+func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool) error {
+	startTime := time.Now()
+	utils.PrintBanner(fmt.Sprintf("正在创建Kubernetes集群: %s", config.Cluster.Name))
+	utils.PrintInfo("开始时间: %s", startTime.Format("2006-01-02 15:04:05"))
+	utils.PrintInfo("集群配置详情:")
+	utils.PrintInfo("  集群名称: %s", config.Cluster.Name)
+	utils.PrintInfo("  Kubernetes版本: %s", config.Cluster.K8sConfig.Version)
+	utils.PrintInfo("  Pod网络CIDR: %s", config.Cluster.K8sConfig.PodNetworkCidr)
+	utils.PrintInfo("  服务CIDR: %s", config.Cluster.K8sConfig.ServiceCidr)
+	utils.PrintInfo("  Docker版本: %s", config.Cluster.K8sConfig.DockerVersion)
+	utils.PrintInfo("  Containerd版本: %s", config.Cluster.K8sConfig.ContainerdVersion)
+
+	// 1. 准备阶段
+	utils.PrintStage("== 集群准备阶段 ==")
+	if err := prepareK8sCluster(config, skipPrecheck); err != nil {
+		utils.PrintError("集群准备失败: %v", err)
+		return fmt.Errorf("集群准备失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 集群准备完成")
+
+	// 2. 依赖安装阶段
+	utils.PrintStage("== 依赖安装阶段 ==")
+	if err := installK8sDependencies(config); err != nil {
+		utils.PrintError("依赖安装失败: %v", err)
+		return fmt.Errorf("依赖安装失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 依赖安装完成")
+
+	// 3. 主节点初始化
+	utils.PrintStage("== 主节点初始化 ==")
+	masterNode := findMasterNode(config)
+	if masterNode == nil {
+		err := fmt.Errorf("配置中没有找到主节点")
+		utils.PrintError("未找到主节点: %v", err)
+		return err
+	}
+	utils.PrintInfo("已选择主节点: %s (%s)", masterNode.Host, masterNode.IP)
+
+	if err := initK8sMaster(masterNode, config); err != nil {
+		utils.PrintError("主节点初始化失败: %v", err)
+		return fmt.Errorf("主节点初始化失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 主节点初始化完成")
+
+	// 4. 工作节点加入
+	utils.PrintStage("== 工作节点加入 ==")
+	if err := joinWorkerNodes(config, masterNode); err != nil {
+		utils.PrintError("工作节点加入失败: %v", err)
+		return fmt.Errorf("工作节点加入失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 工作节点加入完成")
+
+	// 5. 集群信息展示
+	utils.PrintStage("== 集群信息展示 ==")
+	if err := printK8sClusterInfo(config, masterNode); err != nil {
+		utils.PrintError("集群信息展示失败: %v", err)
+		return fmt.Errorf("集群信息展示失败: %w", err)
+	}
+
+	duration := time.Since(startTime)
+	utils.PrintSuccess("\n✓ Kubernetes集群 '%s' 创建成功!", config.Cluster.Name)
+	utils.PrintInfo("总执行时间: %v", duration.Round(time.Second))
+
+	return nil
+}
+
+// prepareK8sCluster 准备Kubernetes集群
+func prepareK8sCluster(config *types.ClusterConfig, skipPrecheck bool) error {
+	utils.PrintInfo("正在创建工作目录...")
+	if err := EnsureWorkDir(); err != nil {
+		utils.PrintError("创建工作目录失败: %v", err)
+		return fmt.Errorf("创建工作目录失败: %w", err)
+	}
+
+	if skipPrecheck {
+		utils.PrintWarning("⚠ 跳过环境预检查，这可能导致安装失败")
+		return nil
+	}
+
+	utils.PrintInfo("正在验证集群配置...")
+	if err := validateK8sClusterConfig(config); err != nil {
+		utils.PrintError("集群配置验证失败: %v", err)
+		return fmt.Errorf("集群配置验证失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 集群配置验证通过")
+
+	utils.PrintInfo("集群节点配置:")
+	for i, node := range config.Cluster.Nodes {
+		utils.PrintInfo("  节点%d: 主机名=%s, IP=%s, 角色=%s", i+1, node.Host, node.IP, node.Role)
+	}
+
+	utils.PrintInfo("正在准备节点...")
+	if err := prepareK8sNodes(config); err != nil {
+		utils.PrintError("节点准备失败: %v", err)
+		return fmt.Errorf("节点准备失败: %w", err)
+	}
+
+	utils.PrintInfo("正在下载Kubernetes组件(版本: %s)...", config.Cluster.K8sConfig.Version)
+	if err := downloadK8sComponents(config.Cluster.K8sConfig.Version); err != nil {
+		utils.PrintError("组件下载失败: %v", err)
+		return fmt.Errorf("组件下载失败: %w", err)
+	}
+
+	return nil
+}
+
+// prepareK8sNodes 准备所有Kubernetes节点
+func prepareK8sNodes(config *types.ClusterConfig) error {
+	var hostsEntries strings.Builder
+	for _, node := range config.Cluster.Nodes {
+		hostsEntries.WriteString(fmt.Sprintf("%s\t%s\n", node.IP, node.Host))
+	}
+
+	installer := docker.NewInstaller(true, true)
+
+	for _, node := range config.Cluster.Nodes {
+		utils.PrintStage(fmt.Sprintf("准备节点: %s (%s)", node.Host, node.IP))
+		startTime := time.Now()
+
+		utils.PrintInfo("正在检查操作系统...")
+		if err := checkAndConfigureOS(&node); err != nil {
+			utils.PrintError("操作系统配置失败: %v", err)
+			return fmt.Errorf("节点%s操作系统配置失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在检查Docker...")
+		if _, err := utils.RunCommandOnNode(&node, "docker --version"); err != nil {
+			version := config.Cluster.K8sConfig.DockerVersion
+			if version == "" {
+				version = "latest"
+			}
+			utils.PrintInfo("正在安装Docker(版本: %s)...", version)
+			if err := installer.Install(version, node); err != nil {
+				utils.PrintError("Docker安装失败: %v", err)
+				return fmt.Errorf("节点%s Docker安装失败: %w", node.Host, err)
+			}
+		}
+
+		utils.PrintInfo("正在配置Docker...")
+		if err := configureDockerOnNode(&node); err != nil {
+			utils.PrintError("Docker配置失败: %v", err)
+			return fmt.Errorf("节点%s Docker配置失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在配置内核参数...")
+		if err := checkAndConfigureKernelOnNode(&node); err != nil {
+			utils.PrintError("内核配置失败: %v", err)
+			return fmt.Errorf("节点%s内核配置失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在配置hosts文件...")
+		if err := configureHostsFile(&node, hostsEntries.String()); err != nil {
+			utils.PrintError("hosts配置失败: %v", err)
+			return fmt.Errorf("节点%s hosts配置失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在检查网络连通性...")
+		if err := checkNetworkConnectivity(&node, config); err != nil {
+			utils.PrintError("网络检查失败: %v", err)
+			return fmt.Errorf("节点%s网络检查失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在检查端口可用性...")
+		if err := checkPortAvailabilityOnNode(&node); err != nil {
+			utils.PrintError("端口检查失败: %v", err)
+			return fmt.Errorf("节点%s端口检查失败: %w", node.Host, err)
+		}
+
+		duration := time.Since(startTime)
+		utils.PrintSuccess("✓ 节点%s准备完成，耗时: %v", node.Host, duration.Round(time.Second))
+	}
+
+	return nil
+}
+
+// checkAndConfigureOS 检查并配置操作系统
+func checkAndConfigureOS(node *types.RemoteNode) error {
+	utils.PrintInfo("正在检查操作系统类型...")
+	osType, err := utils.RunCommandOnNode(node, "uname -s")
+	if err != nil {
+		return fmt.Errorf("检查OS类型失败: %w", err)
+	}
+	if !strings.Contains(strings.ToLower(osType), "linux") {
+		return fmt.Errorf("不支持的OS类型: %s，仅支持Linux", osType)
+	}
+	utils.PrintInfo("操作系统类型: %s", strings.TrimSpace(osType))
+
+	utils.PrintInfo("正在检查CPU架构...")
+	arch, err := utils.RunCommandOnNode(node, "uname -m")
+	if err != nil {
+		return fmt.Errorf("检查CPU架构失败: %w", err)
+	}
+	if !strings.Contains(strings.ToLower(arch), "x86_64") && !strings.Contains(strings.ToLower(arch), "amd64") {
+		return fmt.Errorf("不支持的CPU架构: %s，仅支持x86_64/amd64", arch)
+	}
+	utils.PrintInfo("CPU架构: %s", strings.TrimSpace(arch))
+
+	utils.PrintInfo("正在检查内存大小...")
+	memInfo, err := utils.RunCommandOnNode(node, "free -b")
+	if err != nil {
+		return fmt.Errorf("检查内存大小失败: %w", err)
+	}
+
+	lines := strings.Split(memInfo, "\n")
+	if len(lines) < 2 {
+		return fmt.Errorf("内存信息格式无效")
+	}
+
+	fields := strings.Fields(lines[1])
+	if len(fields) < 2 {
+		return fmt.Errorf("内存信息格式无效")
+	}
+
+	totalMem, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("解析内存大小失败: %w", err)
+	}
+
+	minMem := int64(2 * 1024 * 1024 * 1024) // 2GB
+	if totalMem < minMem {
+		return fmt.Errorf("内存不足: %d字节(最低要求: %d字节)", totalMem, minMem)
+	}
+	utils.PrintInfo("总内存: %.2fGB", float64(totalMem)/float64(1024*1024*1024))
+
+	utils.PrintInfo("正在禁用交换分区...")
+	if _, err := utils.RunCommandOnNode(node, "sudo swapoff -a"); err != nil {
+		return fmt.Errorf("禁用交换分区失败: %w", err)
+	}
+
+	if _, err := utils.RunCommandOnNode(node, "sudo sed -i '/ swap / s/^/#/' /etc/fstab"); err != nil {
+		return fmt.Errorf("永久禁用交换分区失败: %w", err)
+	}
+
+	return nil
+}
+
+// configureDockerOnNode 在节点上配置Docker，合并而非替换现有配置
+func configureDockerOnNode(node *types.RemoteNode) error {
+	utils.PrintInfo("正在启动Docker服务...")
+	if _, err := utils.RunCommandOnNode(node, "sudo systemctl start docker"); err != nil {
+		return fmt.Errorf("启动Docker失败: %w", err)
+	}
+
+	utils.PrintInfo("正在创建Docker配置目录...")
+	if _, err := utils.RunCommandOnNode(node, "sudo mkdir -p /etc/docker"); err != nil {
+		return fmt.Errorf("创建配置目录失败: %w", err)
+	}
+
+	// 我们需要确保存在的基础配置
+	baseConfig := map[string]interface{}{
+		"exec-opts":      []string{"native.cgroupdriver=systemd"},
+		"log-driver":     "json-file",
+		"log-opts":       map[string]string{"max-size": "100m"},
+		"storage-driver": "overlay2",
+	}
+
+	// 尝试读取现有配置
+	existingConfig := make(map[string]interface{})
+	configFile := "/etc/docker/daemon.json"
+
+	// 检查配置文件是否存在
+	_, err := utils.RunCommandOnNode(node, fmt.Sprintf("sudo test -f %s && echo exists || echo not_exists", configFile))
+	if err == nil {
+		// 下载现有配置用于解析
+		tempFile := filepath.Join(utils.GetTmpDir(), "existing_daemon.json")
+		if node.Host == "localhost" || node.Host == "127.0.0.1" {
+			if _, err := utils.RunCommandWithOutput("sudo", "cp", configFile, tempFile); err != nil {
+				return fmt.Errorf("复制现有配置失败: %w", err)
+			}
+		} else {
+			if err := utils.CopyToRemote(node.User, node.IP, node.SSHKey, configFile, tempFile); err != nil {
+				return fmt.Errorf("下载现有配置失败: %w", err)
+			}
+		}
+
+		// 读取并解析现有配置
+		content, err := os.ReadFile(tempFile)
+		if err != nil {
+			return fmt.Errorf("读取现有配置失败: %w", err)
+		}
+
+		if len(content) > 0 {
+			if err := json.Unmarshal(content, &existingConfig); err != nil {
+				return fmt.Errorf("解析现有配置失败: %w", err)
+			}
+		}
+	}
+
+	// 合并配置（基础配置优先）
+	mergedConfig := mergeConfigs(existingConfig, baseConfig)
+
+	// 将合并后的配置转为JSON
+	mergedJSON, err := json.MarshalIndent(mergedConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化合并配置失败: %w", err)
+	}
+
+	// 将合并配置写入临时文件
+	tempFile := filepath.Join(utils.GetTmpDir(), "merged_daemon.json")
+	if err := utils.WriteStringToFile(tempFile, string(mergedJSON)); err != nil {
+		return fmt.Errorf("创建临时配置文件失败: %w", err)
+	}
+
+	utils.PrintInfo("正在上传合并后的Docker配置...")
+	if node.Host == "localhost" || node.Host == "127.0.0.1" {
+		if _, err := utils.RunCommandWithOutput("sudo", "cp", tempFile, configFile); err != nil {
+			return fmt.Errorf("复制合并配置失败: %w", err)
+		}
+	} else {
+		if err := utils.CopyToRemote(node.User, node.IP, node.SSHKey, tempFile, configFile); err != nil {
+			return fmt.Errorf("上传合并配置失败: %w", err)
+		}
+	}
+
+	utils.PrintInfo("正在重启Docker服务...")
+	commands := []string{
+		"sudo systemctl daemon-reload",
+		"sudo systemctl restart docker",
+		"sudo systemctl enable docker",
+	}
+
+	for _, cmd := range commands {
+		if _, err := utils.RunCommandOnNode(node, cmd); err != nil {
+			return fmt.Errorf("执行命令'%s'失败: %w", cmd, err)
+		}
+	}
+
+	utils.PrintInfo("正在验证Docker安装...")
+	if _, err := utils.RunCommandOnNode(node, "docker version"); err != nil {
+		return fmt.Errorf("Docker测试失败: %w", err)
+	}
+
+	return nil
+}
+
+// mergeConfigs 合并两个配置映射（target配置优先）
+func mergeConfigs(base, target map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// 先复制基础配置
+	for k, v := range base {
+		result[k] = v
+	}
+
+	// 用目标配置覆盖
+	for k, v := range target {
+		if baseVal, exists := base[k]; exists {
+			// 特殊处理嵌套map（如log-opts）
+			if baseMap, baseIsMap := baseVal.(map[string]interface{}); baseIsMap {
+				if targetMap, targetIsMap := v.(map[string]interface{}); targetIsMap {
+					// 递归合并嵌套map
+					result[k] = mergeConfigs(baseMap, targetMap)
+					continue
+				}
+			}
+			// 特殊处理数组（如exec-opts）
+			if baseArr, baseIsArr := baseVal.([]interface{}); baseIsArr {
+				if targetArr, targetIsArr := v.([]interface{}); targetIsArr {
+					// 合并数组并去重
+					merged := append(baseArr, targetArr...)
+					unique := make([]interface{}, 0)
+					seen := make(map[interface{}]bool)
+					for _, val := range merged {
+						if !seen[val] {
+							seen[val] = true
+							unique = append(unique, val)
+						}
+					}
+					result[k] = unique
+					continue
+				}
+			}
+		}
+		// 默认情况 - 直接使用目标值
+		result[k] = v
+	}
+
+	return result
+}
+
+// checkAndConfigureKernelOnNode 在节点上检查并配置内核参数
+func checkAndConfigureKernelOnNode(node *types.RemoteNode) error {
+	utils.PrintInfo("正在配置内核参数...")
+
+	requiredModules := []string{"br_netfilter", "overlay"}
+	for _, module := range requiredModules {
+		if _, err := utils.RunCommandOnNode(node, fmt.Sprintf("sudo modprobe %s", module)); err != nil {
+			return fmt.Errorf("加载内核模块%s失败: %w", module, err)
+		}
+
+		moduleFile := fmt.Sprintf("/etc/modules-load.d/%s.conf", module)
+		loadCmd := fmt.Sprintf("echo %s | sudo tee %s", module, moduleFile)
+		if _, err := utils.RunCommandOnNode(node, loadCmd); err != nil {
+			return fmt.Errorf("创建模块加载文件%s失败: %w", moduleFile, err)
+		}
+	}
+
+	requiredParams := map[string]string{
+		"net.bridge.bridge-nf-call-iptables":  "1",
+		"net.bridge.bridge-nf-call-ip6tables": "1",
+		"net.ipv4.ip_forward":                 "1",
+	}
+
+	sysctlFile := "/etc/sysctl.d/99-kubernetes-cri.conf"
+	var content strings.Builder
+	for param, value := range requiredParams {
+		content.WriteString(fmt.Sprintf("%s = %s\n", param, value))
+	}
+
+	tempFile := filepath.Join(utils.GetTmpDir(), "99-kubernetes-cri.conf")
+	if err := utils.WriteStringToFile(tempFile, content.String()); err != nil {
+		return fmt.Errorf("创建临时sysctl配置失败: %w", err)
+	}
+
+	utils.PrintInfo("正在上传内核配置...")
+	if node.Host == "localhost" || node.Host == "127.0.0.1" {
+		if _, err := utils.RunCommandWithOutput("sudo", "cp", tempFile, sysctlFile); err != nil {
+			return fmt.Errorf("复制sysctl配置失败: %w", err)
+		}
+	} else {
+		if err := utils.CopyToRemote(node.User, node.IP, node.SSHKey, tempFile, sysctlFile); err != nil {
+			return fmt.Errorf("上传sysctl配置失败: %w", err)
+		}
+	}
+
+	utils.PrintInfo("正在应用sysctl设置...")
+	if _, err := utils.RunCommandOnNode(node, "sudo sysctl --system"); err != nil {
+		return fmt.Errorf("应用sysctl设置失败: %w", err)
+	}
+
+	return nil
+}
+
+// checkNetworkConnectivity 检查网络连通性
+func checkNetworkConnectivity(node *types.RemoteNode, config *types.ClusterConfig) error {
+	utils.PrintInfo("正在检查网络连通性...")
+
+	for _, peer := range config.Cluster.Nodes {
+		if peer.Host == node.Host {
+			continue
+		}
+
+		checkCmd := fmt.Sprintf("ping -c 1 -W 1 %s", peer.IP)
+		if output, err := utils.RunCommandOnNode(node, checkCmd); err != nil {
+			return fmt.Errorf("节点%s无法访问%s(%s)\n输出: %s",
+				node.Host, peer.Host, peer.IP, output)
+		}
+	}
+
+	return nil
+}
+
+// checkPortAvailabilityOnNode 在节点上检查端口可用性
+func checkPortAvailabilityOnNode(node *types.RemoteNode) error {
+	utils.PrintInfo("正在检查端口可用性...")
+
+	requiredPorts := []int{
+		6443,       // Kubernetes API server
+		2379, 2380, // etcd
+		10250, // Kubelet API
+		10259, // kube-scheduler
+		10257, // kube-controller-manager
+	}
+
+	for _, port := range requiredPorts {
+		checkCmd := fmt.Sprintf("sudo netstat -tuln | grep ':%d ' || true", port)
+		output, err := utils.RunCommandOnNode(node, checkCmd)
+		if err != nil {
+			return fmt.Errorf("检查端口%d失败: %w", port, err)
+		}
+
+		if strings.TrimSpace(output) != "" {
+			return fmt.Errorf("端口%d已被占用: %s", port, output)
+		}
+	}
+
+	return nil
+}
+
+// validateK8sClusterConfig 验证 Kubernetes 集群配置
+func validateK8sClusterConfig(config *types.ClusterConfig) error {
+	if config.Cluster.Name == "" {
+		return fmt.Errorf("集群名称不能为空")
+	}
+
+	if len(config.Cluster.Nodes) == 0 {
+		return fmt.Errorf("集群配置中没有定义节点")
+	}
+
+	masterCount := 0
+	for _, node := range config.Cluster.Nodes {
+		if !utils.IsValidIP(node.IP) {
+			return fmt.Errorf("节点%s的IP地址格式无效: %s", node.Host, node.IP)
+		}
+
+		if strings.ToLower(node.Role) == "master" {
+			masterCount++
+		}
+	}
+
+	if masterCount == 0 {
+		return fmt.Errorf("至少需要一个主节点")
+	}
+
+	if config.Cluster.K8sConfig.PodNetworkCidr == "" {
+		return fmt.Errorf("Pod网络CIDR不能为空")
+	}
+
+	if config.Cluster.K8sConfig.ServiceCidr == "" {
+		return fmt.Errorf("服务CIDR不能为空")
+	}
+
+	return nil
+}
+
+// downloadK8sComponents 下载 Kubernetes 组件
+func downloadK8sComponents(version string) error {
+	cacheDir := filepath.Join(utils.GetDownloadDir(), k8sCacheDir, version)
+	utils.PrintInfo("正在创建缓存目录...")
+	if err := utils.CreateDir(cacheDir); err != nil {
+		return fmt.Errorf("创建缓存目录失败: %w", err)
+	}
+
+	downloader := utils.NewDownloader("")
+
+	for _, component := range strings.Split(k8sComponents, " ") {
+		url := fmt.Sprintf("%s/v%s/bin/linux/amd64/%s", k8sBaseURL, version, component)
+		outputFile := component
+
+		utils.PrintInfo("正在下载%s...", component)
+		if err := downloader.Download(url, outputFile, cacheDir); err != nil {
+			return fmt.Errorf("下载%s失败: %w", component, err)
+		}
+
+		if err := utils.RunCommand("chmod", "+x", filepath.Join(cacheDir, component)); err != nil {
+			return fmt.Errorf("设置%s可执行权限失败: %w", component, err)
+		}
+	}
+
+	utils.PrintSuccess("✓ Kubernetes组件下载成功")
+	return nil
+}
+
+// installK8sDependencies 在所有节点上安装 Kubernetes 依赖
+func installK8sDependencies(config *types.ClusterConfig) error {
+
+	utils.SetNode(config.Cluster.Nodes)
+
+	hosts := []string{}
+	for _, node := range utils.Config.Nodes {
+		hosts = append(hosts, node.IP)
+	}
+
+	installer := installer.NewInstaller()
+
+	k8sComponentUrl := []string{
+		"https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubeadm",
+		"https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubectl",
+		"https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubelet",
+		"https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubelet.service"}
+	// 2. 配置系统参数
+	utils.PrintInfo("正在配置系统参数...")
+	commands := []string{
+		"sudo cp {{.CacheDir}}/kubelet.service /etc/systemd/system/kubelet.service",
+		"sudo chmod 644 /etc/systemd/system/kubelet.service",
+		"sudo swapoff -a",
+		"sudo sed -i '/ swap / s/^/#/' /etc/fstab",
+		"sudo modprobe overlay",
+		"sudo modprobe br_netfilter",
+		"sudo sysctl --system",
+		"sudo systemctl daemon-reload",
+		"sudo systemctl enable kubelet.service",
+		"sudo systemctl start kubelet.service",
+	}
+	k8sComponent := types.Resource{
+		Name:        "kubernetes",
+		Version:     config.Cluster.K8sConfig.Version,
+		URLs:        k8sComponentUrl,
+		Target:      "{{.Filename}}",
+		PostInstall: commands,
+		Hosts:       hosts,
+	}
+	installer.Install(k8sComponent, true)
+
+	urls := []string{"https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.amd64.tgz",
+		"https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service",
+		"https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket"}
+	postInstall := []string{"tar -xvf {{.CacheDir}}/cri-dockerd-{{.Version}}.amd64.tgz -C {{.CacheDir}}",
+		"sudo mv {{.CacheDir}}/cri-dockerd/cri-dockerd /usr/local/bin/",
+		"sudo mkdir -p /etc/systemd/system",
+		"sudo cp {{.CacheDir}}/cri-docker.service /etc/systemd/system/",
+		"sudo cp {{.CacheDir}}/cri-docker.socket /etc/systemd/system/",
+		"sudo systemctl daemon-reload",
+		"sudo systemctl enable cri-docker.service",
+		"sudo systemctl enable --now cri-docker.socket",
+		"sudo systemctl start cri-docker.service",
+	} //--container-runtime-endpoint=unix:///run/docker/containerd/containerd.sock"
+	criDockerd := types.Resource{
+		Name:        "cri-dockerd",
+		Version:     "0.3.9",
+		URLs:        urls,
+		Target:      "{{.Filename}}",
+		PostInstall: postInstall,
+		Hosts:       hosts,
+	}
+
+	installer.Install(criDockerd, true)
+
+	crictlRes := types.Resource{
+		Name:        "crictl",
+		Version:     "1.28.0",
+		URLs:        []string{"https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{.Version}}/crictl-v{{.Version}}-linux-amd64.tar.gz"},
+		Target:      "{{.Filename}}",
+		PostInstall: []string{"sudo tar zxvf {{.CacheDir}}/crictl-v{{.Version}}-linux-amd64.tar.gz -C /usr/local/bin", "sudo chmod +x /usr/local/bin/crictl"},
+		Hosts:       hosts,
+	}
+
+	installer.Install(crictlRes, true)
+
+	return nil
+}
+
+// initK8sMaster 初始化 Kubernetes 主节点
+func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
+	//"hash -r && sudo kubeadm init --pod-network-cidr=%s --service-cidr=%s",
+	initCmd := fmt.Sprintf(
+		"kubeadm init --pod-network-cidr=%s --service-cidr=%s",
+		config.Cluster.K8sConfig.PodNetworkCidr,
+		config.Cluster.K8sConfig.ServiceCidr,
+	)
+
+	utils.PrintInfo("正在使用以下命令初始化主节点:")
+	utils.PrintInfo("  %s", initCmd)
+
+	startTime := time.Now()
+	output, err := utils.RunCommandOnNode(node, initCmd)
+	if err != nil {
+		utils.PrintError("主节点初始化失败: %v", err)
+		utils.PrintDebug("命令输出:\n%s", output)
+		return fmt.Errorf("主节点初始化失败: %w\n输出: %s", err, output)
+	}
+
+	joinCommand := extractJoinCommand(output)
+	if joinCommand == "" {
+		err := fmt.Errorf("无法从kubeadm init输出中提取加入命令")
+		utils.PrintError("提取加入命令失败: %v", err)
+		return err
+	}
+
+	joinFile := filepath.Join(utils.GetWorkDir(), "k8s-join-command.txt")
+	if err := utils.WriteStringToFile(joinFile, joinCommand); err != nil {
+		utils.PrintError("保存加入命令失败: %v", err)
+		return fmt.Errorf("保存加入命令失败: %w", err)
+	}
+	utils.PrintInfo("加入命令已保存到: %s", joinFile)
+
+	utils.PrintInfo("正在配置kubectl...")
+	cmds := []string{
+		"mkdir -p $HOME/.kube",
+		"sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config",
+		"sudo chown $(id -u):$(id -g) $HOME/.kube/config",
+	}
+
+	for _, cmd := range cmds {
+		if _, err := utils.RunCommandOnNode(node, cmd); err != nil {
+			utils.PrintError("命令执行失败: %s: %v", cmd, err)
+			return fmt.Errorf("kubectl配置失败: %w", err)
+		}
+	}
+
+	duration := time.Since(startTime)
+	utils.PrintSuccess("✓ 主节点初始化完成，耗时: %v", duration.Round(time.Second))
+	return nil
+}
+
+// joinWorkerNodes 加入工作节点
+func joinWorkerNodes(config *types.ClusterConfig, masterNode *types.RemoteNode) error {
+	joinFile := filepath.Join(utils.GetWorkDir(), "k8s-join-command.txt")
+	joinCommand, err := utils.ReadFileToString(joinFile)
+	if err != nil {
+		utils.PrintError("读取加入命令失败: %v", err)
+		return fmt.Errorf("读取加入命令失败: %w", err)
+	}
+
+	for _, node := range config.Cluster.Nodes {
+		if node.Role != "worker" {
+			continue
+		}
+
+		utils.PrintStage(fmt.Sprintf("正在加入工作节点: %s", node.Host))
+		startTime := time.Now()
+
+		output, err := utils.RunCommandOnNode(&node, "sudo "+joinCommand)
+		if err != nil {
+			utils.PrintError("工作节点加入失败: %v", err)
+			return fmt.Errorf("工作节点%s加入失败: %w\n输出: %s", node.Host, err, output)
+		}
+
+		duration := time.Since(startTime)
+		utils.PrintSuccess("✓ 节点%s加入成功，耗时: %v", node.Host, duration.Round(time.Second))
+	}
+
+	return nil
+}
+
+// printK8sClusterInfo 打印 Kubernetes 集群信息
+func printK8sClusterInfo(config *types.ClusterConfig, masterNode *types.RemoteNode) error {
+	utils.PrintInfo("正在获取集群节点信息...")
+	output, err := utils.RunCommandOnNode(masterNode, "kubectl get nodes")
+	if err != nil {
+		return fmt.Errorf("获取集群节点失败: %w", err)
+	}
+
+	utils.PrintSuccess("\n✓ Kubernetes集群创建成功!")
+	utils.PrintInfo("\n=== 集群信息 ===")
+	utils.PrintInfo("集群名称: %s", config.Cluster.Name)
+	utils.PrintInfo("主节点: %s (%s)", masterNode.Host, masterNode.IP)
+	utils.PrintInfo("\n集群节点:")
+	fmt.Println(output)
+
+	utils.PrintInfo("\n=== 验证指南 ===")
+	utils.PrintInfo("1. 检查集群状态:")
+	utils.PrintInfo("   kubectl get nodes")
+	utils.PrintInfo("   kubectl get pods --all-namespaces")
+
+	utils.PrintInfo("\n2. 部署测试应用:")
+	utils.PrintInfo("   kubectl create deployment nginx --image=nginx")
+	utils.PrintInfo("   kubectl expose deployment nginx --port=80 --type=NodePort")
+
+	infoFile := filepath.Join(utils.GetWorkDir(), "k8s-cluster-info.txt")
+	infoContent := fmt.Sprintf("集群名称: %s\n主节点: %s\n\n节点:\n%s",
+		config.Cluster.Name, masterNode.Host, output)
+	if err := utils.WriteStringToFile(infoFile, infoContent); err != nil {
+		utils.PrintWarning("保存集群信息失败: %v", err)
+	} else {
+		utils.PrintInfo("\n集群信息已保存到: %s", infoFile)
+	}
+
+	return nil
+}
+
+// extractJoinCommand 从 kubeadm init 输出中提取 join 命令
+func extractJoinCommand(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "kubeadm join") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
+}
+
+// findMasterNode 查找主节点
+func findMasterNode(config *types.ClusterConfig) *types.RemoteNode {
+	for i := range config.Cluster.Nodes {
+		if strings.ToLower(config.Cluster.Nodes[i].Role) == "master" {
+			return &config.Cluster.Nodes[i]
+		}
+	}
+	return nil
+}
+
+// RemoveK8sCluster 移除 Kubernetes 集群
+func RemoveK8sCluster(config *types.ClusterConfig, force bool) error {
+	startTime := time.Now()
+	utils.PrintBanner(fmt.Sprintf("正在移除Kubernetes集群: %s", config.Cluster.Name))
+	utils.PrintInfo("开始时间: %s", startTime.Format("2006-01-02 15:04:05"))
+
+	if !force {
+		if !utils.AskForConfirmation("确定要移除Kubernetes集群吗？") {
+			utils.PrintWarning("操作已取消")
+			return fmt.Errorf("操作已取消")
+		}
+	}
+
+	utils.PrintStage("== 集群移除流程 ==")
+	for _, node := range config.Cluster.Nodes {
+		utils.PrintStage(fmt.Sprintf("正在重置节点: %s (%s)", node.Host, node.IP))
+		startTime := time.Now()
+
+		utils.PrintInfo("正在执行kubeadm reset...")
+		if _, err := utils.RunCommandOnNode(&node, "sudo kubeadm reset -f"); err != nil {
+			utils.PrintError("节点重置失败: %v", err)
+			return fmt.Errorf("节点%s重置失败: %w", node.Host, err)
+		}
+
+		utils.PrintInfo("正在清理配置...")
+		cleanupCmds := []string{
+			"sudo rm -rf /etc/cni/net.d",
+			"sudo rm -rf $HOME/.kube",
+			"sudo rm -rf /etc/kubernetes",
+		}
+
+		for _, cmd := range cleanupCmds {
+			if _, err := utils.RunCommandOnNode(&node, cmd); err != nil {
+				utils.PrintWarning("清理操作失败: %s: %v", cmd, err)
+			}
+		}
+
+		duration := time.Since(startTime)
+		utils.PrintSuccess("✓ 节点%s重置完成，耗时: %v", node.Host, duration.Round(time.Second))
+	}
+
+	duration := time.Since(startTime)
+	utils.PrintSuccess("\n✓ Kubernetes集群 '%s' 移除成功!", config.Cluster.Name)
+	utils.PrintInfo("总执行时间: %v", duration.Round(time.Second))
+
+	return nil
+}

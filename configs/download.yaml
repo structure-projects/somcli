@@ -1,0 +1,51 @@
+resources:
+  - name: "docker"
+    version: "24.0.6"
+    urls:
+      - "https://download.docker.com/linux/static/stable/x86_64/docker-24.0.6.tgz"
+    target: "{{.Name}}-{{.Version}}.tgz"
+    # checksum: "sha256:abc123..." # 注释则不开启验证
+  #   - name: "docker-compose"
+  #     version: "2.24.0"
+  #     urls:
+  #       - "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64"
+  #     target: "{{.Name}}"
+  - name: "docker-install"
+    version: "2.4"
+    urls:
+      - "https://structured.oss-cn-beijing.aliyuncs.com/docker/{{.Version}}/docker-manager.sh"
+    target: "{{.Workdir}}/scripts/{{.Filename}}"
+    # checksum: "sha256:abc123..." # 注释则不开启验证
+  - name: "k8s"
+    version: "1.25.0"
+    urls:
+      - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubeadm"
+      - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubectl"
+      - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubelet"
+    target: "{{.Filename}}"
+  #   - name: "kubeadm"
+  #     version: "1.25.0"
+  #     urls:
+  #       - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubeadm"
+  #     target: "{{.Filename}}"
+  #   - name: "kubectl"
+  #   - name: "kubelet"
+  #     version: "1.25.0"
+  #     urls:
+  #       - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubelet"
+  #     target: "{{.Filename}}"
+  #   - name: "kubectl"
+  #     version: "1.25.0"
+  #     urls:
+  #       - "https://storage.googleapis.com/kubernetes-release/release/v1.25.0/bin/linux/amd64/kubectl"
+  #     target: "{{.Filename}}"
+  - name: "crictl"
+    version: "1.28.0"
+    urls:
+      - "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.28.0/crictl-v1.28.0-linux-amd64.tar.gz"
+    target: "{{.Name}}"
+  - name: "centos"
+    version: "7.5"
+    urls:
+      - "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.28.0/crictl-v1.28.0-linux-amd64.tar.gz"
+    target: "{{.Filename}}"

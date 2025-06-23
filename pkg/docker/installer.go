@@ -1,18 +1,3 @@
-/*
-Copyright 2023 Structure Projects
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 package docker
 
 import (
@@ -24,11 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
 )
 
 const (
-	scriptURL  = "https://structured.oss-cn-beijing.aliyuncs.com/docker/docker-manager.sh"
+	scriptURL  = "https://structured.oss-cn-beijing.aliyuncs.com/docker/2.4/docker-manager.sh"
 	scriptName = "docker-manager.sh"
 )
 
@@ -37,13 +23,6 @@ type Installer struct {
 	silent     bool
 	offline    bool
 	scriptPath string
-}
-
-type RemoteNode struct {
-	IP      string
-	User    string
-	SSHKey  string
-	IsLocal bool
 }
 
 func NewInstaller(silent, offline bool) *Installer {
@@ -102,7 +81,7 @@ func (i *Installer) runScriptCommand(args ...string) error {
 }
 
 // runRemoteCommand 在远程节点执行命令
-func (i *Installer) runRemoteCommand(node RemoteNode, command string) error {
+func (i *Installer) runRemoteCommand(node types.RemoteNode, command string) error {
 	sshCmd := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no %s@%s \"%s\"",
 		node.SSHKey, node.User, node.IP, command)
 
@@ -117,7 +96,7 @@ func (i *Installer) runRemoteCommand(node RemoteNode, command string) error {
 }
 
 // remoteFileExists 检查远程文件是否存在
-func (i *Installer) remoteFileExists(node RemoteNode, remotePath string) (bool, error) {
+func (i *Installer) remoteFileExists(node types.RemoteNode, remotePath string) (bool, error) {
 	checkCmd := fmt.Sprintf("test -f %s && echo exists || echo not_exists", remotePath)
 	output, err := exec.Command("bash", "-c",
 		fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no %s@%s \"%s\"",
@@ -131,7 +110,7 @@ func (i *Installer) remoteFileExists(node RemoteNode, remotePath string) (bool, 
 }
 
 // copyToRemote 复制文件到远程节点（如果不存在）
-func (i *Installer) copyToRemote(node RemoteNode, localPath, remotePath string) error {
+func (i *Installer) copyToRemote(node types.RemoteNode, localPath, remotePath string) error {
 	// 检查远程文件是否已存在
 	exists, err := i.remoteFileExists(node, remotePath)
 	if err != nil {
@@ -158,7 +137,7 @@ func (i *Installer) copyToRemote(node RemoteNode, localPath, remotePath string) 
 }
 
 // checkRsyncVersion 检查远程rsync版本
-func (i *Installer) checkRsyncVersion(node RemoteNode) (bool, error) {
+func (i *Installer) checkRsyncVersion(node types.RemoteNode) (bool, error) {
 	cmd := "rsync --version | head -1 | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' || echo '1.0.0'"
 	output, err := exec.Command("bash", "-c",
 		fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no %s@%s \"%s\"",
@@ -182,7 +161,7 @@ func (i *Installer) checkRsyncVersion(node RemoteNode) (bool, error) {
 }
 
 // copyDirectoryToRemote 兼容低版本的目录复制方法
-func (i *Installer) copyDirectoryToRemote(node RemoteNode, localDir, remoteDir string) error {
+func (i *Installer) copyDirectoryToRemote(node types.RemoteNode, localDir, remoteDir string) error {
 	if !i.silent {
 		fmt.Printf("📦 Copying directory %s to %s:%s\n", localDir, node.IP, remoteDir)
 	}
@@ -255,20 +234,20 @@ func (i *Installer) prepareLocalInstallArgs(version string) []string {
 }
 
 // Install 安装Docker
-func (i *Installer) Install(version string, nodes ...RemoteNode) error {
+func (i *Installer) Install(version string, nodes ...types.RemoteNode) error {
 	if err := i.ensureScript(); err != nil {
 		return err
 	}
 
 	// 默认本地安装
 	if len(nodes) == 0 {
-		nodes = []RemoteNode{{IsLocal: true}}
+		nodes = []types.RemoteNode{{IsLocal: true}}
 	}
 
 	for _, node := range nodes {
 		if !i.silent {
 			fmt.Printf("🚀 Installing Docker (version: %s) on %s\n",
-				version, node.getTargetName())
+				version, node.IP)
 		}
 
 		var err error
@@ -280,19 +259,19 @@ func (i *Installer) Install(version string, nodes ...RemoteNode) error {
 
 		if err != nil {
 			return fmt.Errorf("failed to install Docker on %s: %v",
-				node.getTargetName(), err)
+				node.IP, err)
 		}
 
 		if !i.silent {
 			fmt.Printf("✅ Successfully installed Docker on %s\n",
-				node.getTargetName())
+				node.IP)
 		}
 	}
 	return nil
 }
 
 // installOnRemote 在远程节点安装Docker
-func (i *Installer) installOnRemote(node RemoteNode, version string) error {
+func (i *Installer) installOnRemote(node types.RemoteNode, version string) error {
 	// 1. 准备本地路径
 	localWorkDir := utils.GetWorkDir()
 	localScriptPath := i.scriptPath
@@ -355,19 +334,19 @@ func (i *Installer) installOnRemote(node RemoteNode, version string) error {
 }
 
 // Uninstall 卸载Docker
-func (i *Installer) Uninstall(nodes ...RemoteNode) error {
+func (i *Installer) Uninstall(nodes ...types.RemoteNode) error {
 	if err := i.ensureScript(); err != nil {
 		return err
 	}
 
 	// 默认本地卸载
 	if len(nodes) == 0 {
-		nodes = []RemoteNode{{IsLocal: true}}
+		nodes = []types.RemoteNode{{IsLocal: true}}
 	}
 
 	for _, node := range nodes {
 		if !i.silent {
-			fmt.Printf("🚨 Uninstalling Docker from %s\n", node.getTargetName())
+			fmt.Printf("🚨 Uninstalling Docker from %s\n", node.IP)
 		}
 
 		var err error
@@ -379,12 +358,12 @@ func (i *Installer) Uninstall(nodes ...RemoteNode) error {
 
 		if err != nil {
 			return fmt.Errorf("failed to uninstall Docker from %s: %v",
-				node.getTargetName(), err)
+				node.IP, err)
 		}
 
 		if !i.silent {
 			fmt.Printf("✅ Successfully uninstalled Docker from %s\n",
-				node.getTargetName())
+				node.IP)
 		}
 	}
 	return nil
@@ -401,7 +380,7 @@ func (i *Installer) prepareUninstallArgs() []string {
 }
 
 // uninstallOnRemote 在远程节点卸载Docker
-func (i *Installer) uninstallOnRemote(node RemoteNode) error {
+func (i *Installer) uninstallOnRemote(node types.RemoteNode) error {
 	// 保持与本地相同的脚本路径结构
 	localWorkDir := utils.GetWorkDir()
 	relScriptPath, err := filepath.Rel(localWorkDir, i.scriptPath)
@@ -428,25 +407,25 @@ func (i *Installer) uninstallOnRemote(node RemoteNode) error {
 }
 
 // Status 检查Docker状态
-func (i *Installer) Status(nodes ...RemoteNode) error {
+func (i *Installer) Status(nodes ...types.RemoteNode) error {
 	if err := i.ensureScript(); err != nil {
 		return err
 	}
 
 	// 默认检查本地状态
 	if len(nodes) == 0 {
-		nodes = []RemoteNode{{IsLocal: true}}
+		nodes = []types.RemoteNode{{IsLocal: true}}
 	}
 
 	for _, node := range nodes {
 		output, err := i.getDockerStatus(node)
 		if err != nil {
 			return fmt.Errorf("docker status check failed on %s: %v",
-				node.getTargetName(), err)
+				node.IP, err)
 		}
 
 		if !i.silent {
-			fmt.Printf("🐳 Docker Status on %s:\n", node.getTargetName())
+			fmt.Printf("🐳 Docker Status on %s:\n", node.IP)
 		}
 		fmt.Println(string(output))
 	}
@@ -454,7 +433,7 @@ func (i *Installer) Status(nodes ...RemoteNode) error {
 }
 
 // getDockerStatus 获取Docker状态
-func (i *Installer) getDockerStatus(node RemoteNode) ([]byte, error) {
+func (i *Installer) getDockerStatus(node types.RemoteNode) ([]byte, error) {
 	if node.IsLocal {
 		return exec.Command(i.scriptPath, "-c").CombinedOutput()
 	}
@@ -486,33 +465,33 @@ func (i *Installer) getDockerStatus(node RemoteNode) ([]byte, error) {
 }
 
 // Passthrough 透传命令给Docker
-func (i *Installer) Passthrough(args []string, nodes ...RemoteNode) error {
+func (i *Installer) Passthrough(args []string, nodes ...types.RemoteNode) error {
 	if err := i.ensureScript(); err != nil {
 		return err
 	}
 
 	// 默认本地执行
 	if len(nodes) == 0 {
-		nodes = []RemoteNode{{IsLocal: true}}
+		nodes = []types.RemoteNode{{IsLocal: true}}
 	}
 
 	for _, node := range nodes {
 		if !i.silent {
 			fmt.Printf("🔧 Running Docker command on %s: docker %s\n",
-				node.getTargetName(), strings.Join(args, " "))
+				node.IP, strings.Join(args, " "))
 		}
 
 		err := i.runDockerCommand(node, args)
 		if err != nil {
 			return fmt.Errorf("failed to execute Docker command on %s: %v",
-				node.getTargetName(), err)
+				node.IP, err)
 		}
 	}
 	return nil
 }
 
 // runDockerCommand 执行Docker命令
-func (i *Installer) runDockerCommand(node RemoteNode, args []string) error {
+func (i *Installer) runDockerCommand(node types.RemoteNode, args []string) error {
 	if node.IsLocal {
 		return i.runScriptCommand(args...)
 	}
@@ -540,12 +519,4 @@ func (i *Installer) runDockerCommand(node RemoteNode, args []string) error {
 	cmd := fmt.Sprintf("chmod +x %s && %s %s",
 		remoteScriptPath, remoteScriptPath, strings.Join(args, " "))
 	return i.runRemoteCommand(node, cmd)
-}
-
-// getTargetName 获取目标名称
-func (n RemoteNode) getTargetName() string {
-	if n.IsLocal {
-		return "local machine"
-	}
-	return n.IP
 }

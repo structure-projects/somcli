@@ -1,0 +1,7 @@
+registry.cn-beijing.aliyuncs.com/kubesphereio/kube-apiserver:v1.23.15
+registry.cn-beijing.aliyuncs.com/kubesphereio/kube-controller-manager:v1.23.15
+registry.cn-beijing.aliyuncs.com/kubesphereio/kube-proxy:v1.23.15
+registry.cn-beijing.aliyuncs.com/kubesphereio/kube-scheduler:v1.23.15
+registry.cn-beijing.aliyuncs.com/kubesphereio/pause:3.6
+registry.cn-beijing.aliyuncs.com/kubesphereio/coredns:1.8.6
+registry.cn-beijing.aliyuncs.com/kubesphereio/etcd:3.4.13-0

@@ -1,0 +1,23 @@
+resources:
+  - name: "docker-install"
+    version: "2.4"
+    urls:
+      - "https://structured.oss-cn-beijing.aliyuncs.com/docker/{{.Version}}/docker-manager.sh"
+    target: "{{.Workdir}}/scripts/{{.Filename}}"
+    # checksum: "sha256:abc123..." # 注释则不开启验证
+  - name: "docker"
+    version: "24.0.6"
+    method: "binary"
+    urls:
+      - "https://download.docker.com/linux/static/stable/x86_64/docker-24.0.6.tgz"
+    target: "{{.Name}}-{{.Version}}.tgz"
+    checksum: 99792dec613df93169a118b05312a722a63604b868e4c941b1b436abcf3bb70f
+    post_install:
+      - "echo 执行安装脚本-携带参数"
+    hosts:
+      - "127.0.0.1"
+nodes:
+  - host: "tools"
+    ip: "127.0.0.1"
+    role: "manager"
+    sshKey: "~/.ssh/id_rsa"
