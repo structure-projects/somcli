@@ -8,6 +8,8 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  release:
+    types: [created]
 
 jobs:
 
@@ -24,3 +26,14 @@ jobs:
     - name: Build
       run: ./build.sh
 
+    - name: Upload Release Assets
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          bin/somcli-linux-amd64
+          bin/somcli-linux-arm64
+          bin/somcli-darwin-amd64
+          bin/somcli-darwin-arm64
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
