@@ -210,6 +210,42 @@ k8sConfig:
 
 ## 开发指南
 
+### 构建与安装
+
+项目使用 Makefile 管理构建流程，支持以下命令：
+
+```bash
+# 构建当前平台的二进制
+make build
+
+# 构建所有平台的二进制
+make build-all
+
+# 安装到系统
+sudo make install
+
+# 卸载
+sudo make uninstall
+
+# 运行测试
+make test
+
+# 测试覆盖率
+make test-coverage
+
+# 代码格式化
+make fmt
+
+# 代码检查
+make vet
+
+# 运行 lint
+make lint
+
+# 查看所有可用命令
+make help
+```
+
 ### 项目结构
 
 ```
