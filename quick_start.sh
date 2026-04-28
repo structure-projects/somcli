@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 定义版本和下载URL基础路径
-VERSION="v1.0.0"
+VERSION="v0.1.0-alpha"
 BASE_URL="https://github.com/structure-projects/somcli/releases/download/${VERSION}"
 
 # 检测系统架构
