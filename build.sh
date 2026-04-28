@@ -33,6 +33,14 @@ GOOS=linux GOARCH=amd64 go build \
             -X github.com/structure-projects/somcli/cmd.BuildDate=$DATE" \
   -o ${OUTPUT_DIR}/somcli-linux-amd64
 
+# 构建 Linux arm64 版本
+echo "构建 Linux arm64 版本..."
+GOOS=linux GOARCH=arm64 go build \
+  -ldflags "-X github.com/structure-projects/somcli/cmd.Version=$VERSION \
+            -X github.com/structure-projects/somcli/cmd.GitCommit=$COMMIT \
+            -X github.com/structure-projects/somcli/cmd.BuildDate=$DATE" \
+  -o ${OUTPUT_DIR}/somcli-linux-arm64
+
 # 构建 macOS Intel 版本
 echo "构建 macOS amd64 版本..."
 GOOS=darwin GOARCH=amd64 go build \
