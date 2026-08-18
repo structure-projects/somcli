@@ -17,6 +17,13 @@ package types
 
 // 资源配置下载配置文件结构
 type ResourceConfig struct {
+	// 全局设置。同名命令行标志优先于此处。
+	Offline       bool     `yaml:"offline"`
+	Debug         bool     `yaml:"debug"`
+	GithubProxy   string   `yaml:"github_proxy"`
+	WorkDir       string   `yaml:"workdir"`
+	MirrorsSource []string `yaml:"mirrors_source"`
+
 	Proxy     string       `yaml:"proxy"` // 可选代理
 	Resources []Resource   `yaml:"resources,omitempty"`
 	Nodes     []RemoteNode `yaml:"nodes"`

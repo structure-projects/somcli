@@ -33,7 +33,7 @@ func LoadDownloadConfig(configPath string) (*types.ResourceConfig, error) {
 	}
 
 	var config types.ResourceConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := yaml.UnmarshalStrict(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 

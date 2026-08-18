@@ -3,7 +3,7 @@ resources:
     version: "2.4"
     urls:
       - "https://structured.oss-cn-beijing.aliyuncs.com/docker/{{.Version}}/docker-manager.sh"
-    target: "{{.Workdir}}/scripts/{{.Filename}}"
+    target: "{{.WorkDir}}/scripts/{{.Filename}}"
     # checksum: "sha256:abc123..." # 注释则不开启验证
   - name: "docker"
     version: "24.0.6"

@@ -83,7 +83,6 @@ resources:
       - "chmod +x /usr/local/bin/kubelet"
     hosts:
       - "127.0.0.1"
-    target: "{{.Filename}}"
   - name: "crictl"
     version: "1.28.0"
     urls:
@@ -104,7 +103,6 @@ nodes:
     ip: "127.0.0.1"
     role: "manager"
     sshKey: "~/.ssh/id_rsa"
-    mirrors_source: ./scripts/CentosAliyunMirrors.sh 
 cluster:
   -  name: "my-swarm"
      type: "swarm"

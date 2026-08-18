@@ -7,7 +7,7 @@ resources:
     version: "2.4"
     urls:
       - "https://structured.oss-cn-beijing.aliyuncs.com/docker/{{.Version}}/docker-manager.sh"
-    target: "{{.Workdir}}/scripts/{{.Filename}}"
+    target: "{{.WorkDir}}/scripts/{{.Filename}}"
     # checksum: "sha256:abc123..." # 注释则不开启验证
   - name: "docker"
     version: "24.0.6"
@@ -59,7 +59,6 @@ resources:
       - "chmod +x /usr/local/bin/kubelet"
     hosts:
       - "127.0.0.1"
-    target: "{{.Filename}}"
   - name: "crictl"
     version: "1.28.0"
     urls:

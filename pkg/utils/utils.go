@@ -310,11 +310,34 @@ func LoadConfig(path string) (*types.ResourceConfig, error) {
 		return nil, err
 	}
 
-	if err := yaml.Unmarshal(data, &Config); err != nil {
-		return nil, err
+	// UnmarshalStrict：未知字段直接报错。默认的 Unmarshal 会静默忽略拼错的键，
+	// 用户以为配了某个能力，实际从未生效。
+	if err := yaml.UnmarshalStrict(data, &Config); err != nil {
+		return nil, fmt.Errorf("解析配置 %s 失败: %w", path, err)
 	}
 
+	applyGlobalSettings(&Config)
+
 	return &Config, nil
+}
+
+// applyGlobalSettings 让配置文件里的全局设置真正生效。命令行标志已显式设置的不覆盖。
+func applyGlobalSettings(cfg *types.ResourceConfig) {
+	if cfg.Offline {
+		SetOffline(true)
+	}
+	if cfg.Debug {
+		SetDebugMode(true)
+	}
+	if cfg.GithubProxy != "" && viper.GetString("github_proxy") == "" {
+		viper.Set("github_proxy", cfg.GithubProxy)
+	}
+	if cfg.WorkDir != "" && viper.GetString("workdir") == "" {
+		viper.Set("workdir", cfg.WorkDir)
+	}
+	if len(cfg.MirrorsSource) > 0 {
+		InitSource(cfg.MirrorsSource)
+	}
 }
 
 func SetNode(nodes []types.RemoteNode) {

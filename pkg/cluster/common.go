@@ -33,7 +33,7 @@ func LoadConfig(configFile string) (*types.ClusterConfig, error) {
 	}
 
 	var config types.ClusterConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := yaml.UnmarshalStrict(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
