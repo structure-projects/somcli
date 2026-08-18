@@ -1,0 +1,190 @@
+# 迁移变更提案：M0 建立可信信号
+
+| 字段 | 值 |
+|---|---|
+| 提案 ID | 20260818-migrate-phase0-trusted-signal |
+| 级别 | major |
+| 类型 | migration |
+| 创建日期 | 2026-08-18 |
+| 创建人 | chuck |
+| 状态 | coding |
+| 优先级 | high |
+| 总纲 | `changes/proposals/20260818-migrate-arch-convergence/proposal.md` |
+| 技术附录 | `doc/提案-架构收敛与测试体系.md` §4（缺陷基线）、§5.2 Phase 0 |
+| 场景 | 22 个（`test/matrix.yaml` 中 `phase: 0`），当前 3 done / 19 pending |
+
+> 本里程碑是所有后续工作的前置。在 `RunScripts` 吞错与 `SetNode` 断链修好之前，
+> 任何"验证通过"都不可信 —— 失败也会打印 `✓ 成功`，连人工判断都不可靠。
+>
+> 验证方式遵循总纲「功能验证约定」：**一律黑盒**，编译二进制 → 喂真实配置 → 跑真实命令 →
+> 断言退出码 / 输出 / 落盘产物 / 目标节点状态。`test/` 下禁止 import 本仓库 `pkg/`。
+
+## 现状
+
+### 已完成的代码修复（工作区未提交）
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| D2 `RunScripts` 吞掉全部错误 | 已修 | `pkg/utils/command.go` 逐脚本包装错误并向上返回，本地/远程两条路径均传播 |
+| D1 `SetNode` 全仓库零调用点 | 已修 | `pkg/cluster/common.go:51` 调用 `utils.SetNode(config.Cluster.Nodes)`；`GetNode` 改签名返回 `error`，去掉 `127.0.0.1` 静默兜底 |
+| F1 `html/template` 转义 shell 的 `&` | 已修 | `pkg/utils/utils.go` 改 `text/template` |
+| F4 下载失败仍打印 SUCCESS | 已修 | `pkg/installer/downloader.go:94` `PrintSuccess` 移入成功分支 |
+| G8 下载全失败仍 exit 0 | 已修 | `DownloadResources` 返回 error，`cmd/install.go:102` 据此返回失败 |
+| D9 `docker-compose --help` 触发真实安装 | 已修 | `cmd/compose.go` 保留透传所需的 `DisableFlagParsing`，在 `Run` 内前置拦截 `--help`/`-h`，安装器之前返回 |
+| 配置静默忽略未知字段 | 已修 | `pkg/utils/utils.go:315`、`pkg/cluster/common.go:36`、`pkg/installer/downloader.go:36` 三处改 `yaml.UnmarshalStrict` |
+| 17 个文件未格式化 | 已修 | `gofmt -l .` 输出为空 |
+| CI 恒绿但零保障 | 已修 | `.github/workflows/ci.yml` 取代 `test.yml`（旧文件用 `go fmt ./...`，就地改写文件且恒退出 0） |
+
+### 已完成但方向错误、必须在本里程碑清除的产物
+
+上一轮把"建设测试体系"当成了交付物，写出了白盒断言与测自己的测试。somcli 需要的是
+**对自身功能的黑盒验证**，因此以下产物一律删除或重写：
+
+| 产物 | 为什么错 | 处置 |
+|---|---|---|
+| `test/unit/` 7 个文件 | 直接 import 并调用 `utils.SetNode`、`utils.ParseStr`、`installer.*` 等导出函数，断言的是内部实现而非工具行为；这类用例会随重构变红，且反向锁死结构 | 删除，覆盖的场景改写为黑盒用例 |
+| `test/coverage_matrix_test.go` | 校验"测试函数名是否含场景 ID"，测的是测试自己 | 删除；场景清单改为人工维护、人工评审 |
+| `test/contract/config_test.go` | 用 `yaml.UnmarshalStrict` 直接解到 `types.ResourceConfig`，绕过二进制；还维护了一份 `nonconforming` 欠账清单与"清单必须准确"的自校验测试 | 重写为跑二进制的配置校验用例，欠账清单移入本提案与 M4 |
+| `ci.yml` 的 `MIN_COVERAGE: '9'` 与 `-coverpkg=./...` | 行覆盖率是白盒指标，会反向逼迫为覆盖率而拆函数、抽接口 | 删除门槛与 `-coverpkg`；保留 `-race` |
+
+`test/contract/exitcode_test.go` 与 `test/contract/cli_debug_test.go` 确为黑盒（`go build` 出二进制、
+`exec.Command` 执行、断言退出码与输出），保留，随目录改名迁到 `test/local/`。
+
+### 进度回退说明
+
+`test/matrix.yaml` 中先前记为 `done` 的 16 个场景，删除白盒产物后只剩 3 个仍有承载：
+SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构建矩阵）。
+其余 13 个（SC-E02/E07/E13、SC-D01/D03/D04、SC-F01/F02/F04/F06/F07、SC-X01/X05）已回退为
+`pending`，由本里程碑用黑盒用例重新兑现。**宁可进度数字变小，也不要用白盒断言冒充功能验证。**
+
+### 本里程碑剩余范围
+
+| 场景 | 缺什么 |
+|---|---|
+| SC-E01 本机安装单个资源 | `test/local/engine_test.go` 未建 |
+| SC-E02 多资源按数组顺序 | 同上（顺序靠脚本按序追加同一文件来观察） |
+| SC-E07 `install -n` 按名安装 | 同上（断言只有被点名的资源产生副作用） |
+| SC-E03 单个远程节点安装 | `test/remote/dispatch_test.go` 未建（需 CI 内 SSH 自连接） |
+| SC-E04/E05/E06 多远程节点 / `hosts` 定向 / 混合编排 | `test/multinode/` 与 3 节点 sshd fixtures 未建 |
+| SC-E13 模板变量三处上下文一致 | `test/local/template_test.go` 未建 |
+| SC-F01 `hosts` 引用未声明主机 | `test/local/node_resolve_test.go` 未建 |
+| SC-F02 SSH 不可达报错含节点/用户/IP | `test/local/failure_test.go` 未建 |
+| SC-F04 `pre_install` 失败则中止 | 同上 |
+| SC-F06 模板引用不存在变量则报错 | `test/local/template_test.go` 未建 |
+| SC-F07 未知字段拒绝 | `test/local/config_test.go` 未建（黑盒版） |
+| SC-D01/D03/D04 下载与 target 路径 | `test/local/download_test.go` 未建（用本地 HTTP 服务当源，不依赖外网） |
+| SC-X01 `--workdir` 改变全部派生目录 | `test/local/workdir_test.go` 未建 |
+| SC-X04 文档中命令与标志真实存在 | `test/local/doc_commands_test.go` 未建 |
+| — | `.github/workflows/integration.yml`（remote/multinode 载体）未建 |
+
+其中 **SC-E05 的负向断言是 D1 的终极回归**：断言文件出现在目标节点、且**不出现在运行 somcli 的操作机**上，直接封死"误装在操作机"复现的可能。
+
+## 目标状态
+
+从用户视角能观察到的行为：
+
+- 任何失败路径：退出码非 0，输出中不出现 `[SUCCESS]`；
+- `somcli <任意命令> --help` 不产生任何文件系统或网络副作用；
+- `hosts` 引用未声明的节点 → 明确报错，绝不兜底到本机执行；
+- 配置含未知字段 / 重复键 → 拒绝而非静默忽略；
+- `--workdir` 一改，全部派生目录随之改变，不再往仓库里写 `somwork`；
+- `test/matrix.yaml` 中 22 个 `phase: 0` 场景全部 `status: done`，且每条都由跑二进制的用例承载。
+
+工程侧：`test/` 只剩 `local`/`remote`/`multinode` 三个包，`go test ./...` 默认只跑 `local` 且保持秒级。
+
+## 迁移策略
+
+渐进改造，且**先修错误传播、再补验证**：错误传播修好之前写的用例无法区分"真通过"和"吞错后的假通过"。
+
+黑盒用例的落地手法（对应各场景，不改一行生产代码）：
+
+| 要观察的行为 | 黑盒观察手法 |
+|---|---|
+| 脚本是否执行、执行顺序 | `pre_install`/`post_install` 写 `echo <标记> >> $FILE`，跑完读文件断言内容与顺序 |
+| 模板渲染结果 | 让脚本把渲染后的字符串 `echo` 到临时文件，断言文件内容（覆盖 `&`、`{{.Version}}`、`{{.WorkDir}}`） |
+| 模板变量不存在 | 配置里写 `{{.NoSuchVar}}`，断言退出码非 0 且错误信息含变量名 |
+| 下载与 checksum | 用例内起 `httptest` 本地 HTTP 服务当下载源，配置 URL 指向它；断言产物落盘位置、内容、校验失败时不留残留文件 |
+| 派生目录 | 传不同 `--workdir`，断言产物只出现在该目录下，仓库目录零新增文件 |
+| 节点解析 | 配置声明 node-a，`hosts` 写 node-x，断言退出码非 0、错误含 `node-x`，且**本机无任何副作用** |
+| SSH 不可达 | `nodes` 指向 `192.0.2.1`（TEST-NET-1，保证不可达），断言错误信息含节点名/用户/IP |
+| 帮助无副作用 | 跑 `--help` 前后对 `--workdir` 目录与 `HOME` 做文件树快照对比，要求完全一致 |
+| 文档命令真实存在 | 抽 `README.md` + `doc/*.md` 中的 `somcli ...` 调用，对二进制执行 `<cmd> --help`，断言退出码 0；标志则断言出现在该命令的 `--help` 输出里 |
+| 远程分发 | CI runner 对自身 SSH；断言目标路径出现文件、内容一致 |
+
+**SC-X05 / SC-F07（配置校验）需要一个不产生副作用的入口**，否则只能靠 `install` 真跑。
+本提案的取向：新增 `somcli validate -f <file>` 只读命令 —— 它按**产品能力**立项（严格解析上线后，
+用户照抄示例前需要自查手段），不是为测试而加的钩子。定论见总纲待决事项 6；若否决，则退化为
+"用一份最小无害配置（只含 `echo` 脚本）间接验证解析行为"，验证力度下降但仍是黑盒。
+
+提交切分（避免 167 个文件一次评审）：
+
+1. `style:` 纯格式化（`gofmt -w`）
+2. `chore:` 规则与 changes 骨架安装（`.claude/`、`changes/`）
+3. `docs(changes):` 本提案与各子提案
+4. `fix:` 按缺陷编号分组：D2+D1（错误传播与节点解析）、F1、F4+G8、D9、严格解析
+5. `test:` 场景清单 + 黑盒用例（`test/local/`）
+6. `ci:` `ci.yml` 取代 `test.yml`
+
+## 阶段规划
+
+| 里程碑 | 范围 | 完成标准 |
+|---|---|---|
+| M0.1 | 清除白盒产物：删 `test/unit/`、`coverage_matrix_test.go`，`test/contract/` → `test/local/`，去掉覆盖率门槛 | `go test ./...` 全绿；`grep -r "structure-projects/somcli" test/` 无结果 |
+| M0.2 | 已完成项落库：切分支 + 按上述 6 组提交 | `go build ./...`、`go test ./...` 全绿；`gofmt -l` 为空 |
+| M0.3 | `local` 组黑盒用例（13 个回退场景 + SC-E01/E02/E07/X04） | 每条用例在缺陷未修版本上能复现失败 |
+| M0.4 | `remote` 组（SC-E03） | CI runner 对自身 SSH，走真实 `scp` 分发与远程执行路径 |
+| M0.5 | `multinode` 组（SC-E04/E05/E06） | 3 个 systemd-enabled sshd 容器；`hosts` 定向的负向断言通过 |
+| M0.6 | `integration.yml` 落地 | 22 个场景 done，两条流水线全绿 |
+
+## 风险评估
+
+- **M0.3 的 SC-X04 会立刻让 CI 变红** —— 技术附录 G4/G5 已实测出大量文档命令不存在（`docker-images`、`cluster deploy`、`offline download`、`registry install -h` 等）。缓解：只修文档中的命令名与标志（trivial 级改动），schema 与文档结构的重建留给 M4。
+- **`multinode` 依赖 docker + systemd 容器，本地 macOS arm64 无法验证** → 只在 CI 执行，用 build tag `multinode` 隔离，`go test ./...` 默认不跑。
+- **严格解析让 `configs/**` 现有示例直接报错** → 与代码同批修正示例（`{{.Workdir}}` → `{{.WorkDir}}` 等），已知仍不符合类型的 3 个文件（`config.yaml` 的 cluster 列表形态与 `images:` 段、`kubernetes-cluster.yaml` 的多文档 `version/kind` schema、`tools.yaml` 依赖尚未实现的 `package` 能力）留到 M1/M4，本提案在「兼容性保证」中逐条记账，不写成测试白名单。
+- **黑盒用例可能"跑了但没验到"** → 每条用例必须有正向产物断言（文件内容 / 输出关键字 / 节点状态），并且新增时先在未修版本上确认会失败。
+- **`local` 组在开发机上真实执行脚本** → 副作用一律限制在 `t.TempDir()`，脚本只用 `echo`/`true`/`exit N`；任何需要 root、包管理器或 systemd 的场景归入 `remote`/`multinode`。
+
+## 回滚预案
+
+单分支单合并，回滚 = `git revert` 合并提交。特别注意：回滚会一并恢复"失败打印成功"的行为，因此 M0 一旦合并不应回滚，若有问题应向前修复。
+
+## 兼容性保证
+
+| 维度 | 说明 |
+|---|---|
+| CLI | 命令与标志无删除、无重命名；若待决事项 6 通过，新增只读命令 `validate`（纯新增，不影响既有路径） |
+| 配置 | **BREAKING**：未知键从静默忽略改为报错。受影响的 9 类键见技术附录 §2.3，changelog 逐条列出 |
+| 行为 | **BREAKING**：失败退出码从 0 变为非 0，调用方脚本/CI 可见行为变化 |
+| `--help` | 从"可能触发安装"变为纯只读，属安全性修正 |
+| 已知欠账 | `configs/config.yaml`、`configs/kubernetes-cluster.yaml`、`configs/tools.yaml` 三个示例在严格解析下仍不合法，M1（`package` 能力）与 M4（schema 归一）解决；本里程碑在文档中标注它们为"设计稿，暂不可直接运行" |
+
+## 双规范并存期约定
+
+- 老代码：本里程碑只碰错误传播、节点解析、模板引擎、下载结果打印、compose 帮助拦截、YAML 解析六处，其余文件除格式化外不动。
+- 新代码：`test/` 下只允许黑盒用例；用例命名含场景 ID（`SC_E05` 形式）是**约定，无机器校验**。
+- 边界识别：文件是否在「影响范围」中。
+
+## 影响范围
+
+- **代码**：`pkg/utils/{command,utils}.go`、`pkg/cluster/common.go`、`pkg/installer/downloader.go`、`cmd/{compose,install}.go`；若待决事项 6 通过，新增 `cmd/validate.go`
+- **配置**：`configs/**`（示例修正，配合严格解析）
+- **测试**：删除 `test/unit/`、`test/coverage_matrix_test.go`、`test/contract/config_test.go`；`test/contract/` → `test/local/`；新增 `test/local/*`、`test/remote/*`、`test/multinode/*`、`test/fixtures/multinode/`；更新 `test/matrix.yaml`
+- **CI**：`.github/workflows/ci.yml`（去覆盖率门槛、加 `test/` 不得 import `pkg/` 的 grep 守卫）、`integration.yml`（新增）、删除 `test.yml`
+- **文档**：`README.md` 与 `doc/*.md` 中的命令名/标志修正（仅为通过 SC-X04，不做结构重建）
+
+## 验收标准
+
+- [ ] `test/matrix.yaml` 中 22 个 `phase: 0` 场景全部 `status: done`，每条 `files` 指向的用例真实存在
+- [ ] `test/` 下无任何 `github.com/structure-projects/somcli` import（CI 守卫生效）
+- [ ] `ci.yml` 中不存在 `MIN_COVERAGE` / `-coverpkg`
+- [ ] `gofmt -l .` 为空；`go vet ./...` 干净
+- [ ] SC-E05 负向断言通过：目标节点有文件、操作机无文件（D1 不可能复现）
+- [ ] 任意失败路径退出码非 0 且输出无 `[SUCCESS]`（D2/F4/G8 不可能复现）
+- [ ] `somcli <任意命令> --help` 前后文件树快照一致（D9）
+- [ ] 文档中出现的每条命令与标志，在二进制上 `--help` 可验证存在（SC-X04）
+- [ ] 每条新增用例都已在缺陷未修版本上确认会失败
+- [ ] changelog 已补条目，两项 BREAKING 单列
+
+## 任务清单
+
+详见 `tasks.md`。
