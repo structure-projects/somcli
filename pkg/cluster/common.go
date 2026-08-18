@@ -46,6 +46,10 @@ func LoadConfig(configFile string) (*types.ClusterConfig, error) {
 		return nil, fmt.Errorf("at least one node must be specified")
 	}
 
+	// 把节点登记进全局节点表。缺了这一步，utils.GetNode 查不到任何主机，
+	// 声明为远程的安装会被解析失败或误当作本机执行。
+	utils.SetNode(config.Cluster.Nodes)
+
 	return &config, nil
 }
 

@@ -320,16 +320,57 @@ func LoadConfig(path string) (*types.ResourceConfig, error) {
 func SetNode(nodes []types.RemoteNode) {
 	Config.Nodes = nodes
 }
-func GetNode(hostname string) types.RemoteNode {
 
+// LocalNodeIP 标识"在操作机本地执行"的节点。
+const LocalNodeIP = "127.0.0.1"
+
+// isLocalHostLiteral 判断 hosts 条目是否为显式的本机字面量。
+func isLocalHostLiteral(hostname string) bool {
+	switch hostname {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
+}
+
+// GetNode 按主机名或 IP 在已声明的 nodes 中查找节点。
+//
+// 查不到时返回错误而不是兜底到本机：兜底会让声明为远程的编排静默地在操作机上
+// 执行 swapoff / 包管理器安装 / systemctl enable 这类破坏性动作。
+// 只有 hosts 里显式写 localhost / 127.0.0.1 / ::1 才被当作本机目标。
+func GetNode(hostname string) (types.RemoteNode, error) {
 	for _, host := range Config.Nodes {
 		if host.Host == hostname || host.IP == hostname {
-			return host
+			return host, nil
 		}
 	}
-	return types.RemoteNode{
-		IP: "127.0.0.1",
+
+	if isLocalHostLiteral(hostname) {
+		return types.RemoteNode{Host: hostname, IP: LocalNodeIP}, nil
 	}
+
+	if len(Config.Nodes) == 0 {
+		return types.RemoteNode{}, fmt.Errorf(
+			"无法解析主机 %q：配置中没有声明任何节点，请在配置顶层添加 nodes: 列表", hostname)
+	}
+	return types.RemoteNode{}, fmt.Errorf(
+		"无法解析主机 %q：不在已声明的节点中（已声明：%s）", hostname, strings.Join(declaredNodeRefs(), ", "))
+}
+
+// declaredNodeRefs 返回已声明节点的可读引用，用于错误提示。
+func declaredNodeRefs() []string {
+	refs := make([]string, 0, len(Config.Nodes))
+	for _, n := range Config.Nodes {
+		switch {
+		case n.Host != "" && n.IP != "":
+			refs = append(refs, fmt.Sprintf("%s(%s)", n.Host, n.IP))
+		case n.Host != "":
+			refs = append(refs, n.Host)
+		default:
+			refs = append(refs, n.IP)
+		}
+	}
+	return refs
 }
 
 func GetNodes() []types.RemoteNode {

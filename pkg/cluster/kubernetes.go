@@ -213,7 +213,9 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 		Hosts:  hosts,
 		Target: "{{.Filename}}",
 	}
-	installer.Install(cniResource, false)
+	if err := installer.Install(cniResource, false); err != nil {
+		return fmt.Errorf("安装 CNI 插件失败: %w", err)
+	}
 
 	// 定义Containerd资源
 	runcResource := types.Resource{
@@ -230,7 +232,9 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 		Target: "{{.Filename}}",
 	}
 
-	installer.Install(runcResource, false)
+	if err := installer.Install(runcResource, false); err != nil {
+		return fmt.Errorf("安装 runc 失败: %w", err)
+	}
 
 	// 定义Containerd资源
 	containerdResource := types.Resource{

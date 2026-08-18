@@ -17,6 +17,7 @@ package installer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 	"github.com/structure-projects/somcli/pkg/types"
@@ -54,15 +55,22 @@ func (i *Installer) InstallTool(configPath string, name string, quiet bool) erro
 	if err != nil {
 		return fmt.Errorf("load config failed: %w", err)
 	}
+	declared := make([]string, 0, len(config.Resources))
 	for _, tool := range config.Resources {
 		//判断名称一致则启用安装流程
 		if tool.Name == name {
 			if err := i.Install(tool, quiet); err != nil {
 				return fmt.Errorf("%s install failed: %w", tool.Name, err)
 			}
+			return nil
 		}
+		declared = append(declared, tool.Name)
 	}
-	return nil
+
+	if len(declared) == 0 {
+		return fmt.Errorf("配置 %s 中没有声明任何资源，无法安装 %q", configPath, name)
+	}
+	return fmt.Errorf("配置 %s 中不存在资源 %q（已声明：%s）", configPath, name, strings.Join(declared, ", "))
 }
 
 // 安装
@@ -76,16 +84,23 @@ func (i *Installer) Install(tool types.Resource, quiet bool) error {
 	utils.PrintDebug("输出资源信息 -> %v , ", tool)
 	for _, url := range tool.URLs {
 		res := DownloadSingleFile(downloader, tool, fmt.Sprint(url))
+		if res.Error != nil {
+			return fmt.Errorf("准备文件失败 (%s): %w", res.URL, res.Error)
+		}
 		// 拷贝文件
 		for _, hostname := range tool.Hosts {
-			node := utils.GetNode(hostname)
-			if node.IP == "127.0.0.1" {
-				utils.PrintWarning("loacl install not copy file .")
-			} else {
-				utils.PrintInfo("拷贝文件 %s 到远程主机-> %s", res.LocalPath, node.IP)
-				utils.CopyToRemote(node.User, node.IP, node.SSHKey, res.LocalPath, res.LocalPath)
+			node, err := utils.GetNode(hostname)
+			if err != nil {
+				return fmt.Errorf("分发 %s 失败: %w", res.LocalPath, err)
 			}
-
+			if node.IP == utils.LocalNodeIP {
+				utils.PrintWarning("本机目标 %s，跳过文件分发", hostname)
+				continue
+			}
+			utils.PrintInfo("拷贝文件 %s 到远程主机-> %s", res.LocalPath, node.IP)
+			if err := utils.CopyToRemote(node.User, node.IP, node.SSHKey, res.LocalPath, res.LocalPath); err != nil {
+				return fmt.Errorf("拷贝 %s 到节点 %s (%s) 失败: %w", res.LocalPath, hostname, node.IP, err)
+			}
 		}
 	}
 	utils.PrintStage("执行安装前置处理脚本")
