@@ -1,0 +1,688 @@
+# 功能 × 场景覆盖矩阵（人工维护的验收清单）
+#
+# 这是 doc/提案-架构收敛与测试体系.md §3.2 场景全集的唯一事实来源，
+# 也是各阶段提案「完成标准」引用的对象。本文件由人维护、由人评审，
+# 不存在校验它自己的元测试 —— 测试只用来验证 somcli 的功能。
+#
+# 所有用例一律黑盒：编译出 somcli 二进制 → 喂真实配置文件 → 执行真实命令 →
+# 断言退出码 / 输出 / 落盘产物 / 目标节点状态。test/ 下禁止 import 本仓库的 pkg/。
+#
+# 字段：
+#   id      场景编号，规则 SC-<域><序号>
+#   desc    场景描述
+#   env     该场景需要的执行环境（决定 build tag 与在哪条流水线跑）：
+#             local     只需 Go + 本机 shell，默认 go test ./... 就跑
+#             remote    需要 SSH 可达的单个节点（CI runner 对自身 SSH）
+#             multinode 需要 3 个 sshd 容器
+#             cluster   需要可安装 k8s / swarm 的特权环境
+#             matrix    由流水线的平台矩阵承载，无 Go 用例
+#   files   承载该场景的用例文件（相对仓库根）
+#   defects 该场景负责回归的缺陷编号，见提案 §4
+#   phase   在哪个阶段兑现，见提案 §5.2
+#   status  pending | done
+
+scenarios:
+  # ---------- SC-E 引擎核心编排 ----------
+  - id: SC-E01
+    desc: 本机安装单个资源
+    env: [local]
+    files: [test/local/engine_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-E02
+    desc: 本机安装多个资源，严格按 resources 数组顺序
+    env: [local]
+    files: [test/local/engine_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-E03
+    desc: 单个远程节点安装
+    env: [remote]
+    files: [test/remote/dispatch_test.go]
+    defects: [D1]
+    phase: 0
+    status: pending
+
+  - id: SC-E04
+    desc: 多个远程节点安装同一资源
+    env: [multinode]
+    files: [test/multinode/dispatch_test.go]
+    defects: [D1]
+    phase: 0
+    status: pending
+
+  - id: SC-E05
+    desc: hosts 定向——资源只落到指定节点，其余节点无副作用（含负向断言）
+    env: [multinode]
+    files: [test/multinode/dispatch_test.go]
+    defects: [D1]
+    phase: 0
+    status: pending
+
+  - id: SC-E06
+    desc: 混合编排——资源 A 本机、资源 B 远程
+    env: [multinode]
+    files: [test/multinode/dispatch_test.go]
+    defects: [D1]
+    phase: 0
+    status: pending
+
+  - id: SC-E07
+    desc: 按名称安装单个资源（install -n）
+    env: [local]
+    files: [test/local/engine_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-E08
+    desc: 重复执行幂等，不产生重复副作用
+    env: [local]
+    files: [test/local/idempotency_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  - id: SC-E09
+    desc: 版本升级——version 变更后重新实施
+    env: [local]
+    files: [test/local/idempotency_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  - id: SC-E10
+    desc: 卸载——remove_scripts 逆序执行，环境干净
+    env: [local]
+    files: [test/local/uninstall_test.go]
+    defects: [E2]
+    phase: 1
+    status: pending
+
+  - id: SC-E11
+    desc: extra_files 渲染落盘（内容、权限、父目录创建）
+    env: [local]
+    files: [test/local/extrafiles_test.go]
+    defects: [D3]
+    phase: 1
+    status: pending
+
+  - id: SC-E12
+    desc: 用户自定义变量 vars 与 --set k=v 覆盖
+    env: [local]
+    files: [test/local/vars_test.go]
+    defects: [E3]
+    phase: 1
+    status: pending
+
+  - id: SC-E13
+    desc: 模板变量全集在 URL / target / 脚本三处上下文一致可用
+    env: [local]
+    files: [test/local/template_test.go]
+    defects: [E5, F2]
+    phase: 0
+    status: pending
+
+  - id: SC-E14
+    desc: 节点级并发 --parallel N，结果与串行一致
+    env: [multinode]
+    files: [test/multinode/parallel_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  - id: SC-E15
+    desc: on_error abort / continue 行为
+    env: [local, multinode]
+    files: [test/local/onerror_test.go, test/multinode/onerror_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  - id: SC-E16
+    desc: 状态记录与查询——哪个节点装了什么版本
+    env: [local]
+    files: [test/local/state_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  # ---------- SC-M 安装方式 ----------
+  - id: SC-M01
+    desc: "method: binary 解压并放置可执行文件"
+    env: [local]
+    files: [test/local/method_test.go]
+    defects: [E1]
+    phase: 1
+    status: pending
+
+  - id: SC-M02
+    desc: "method: package 经发行版包管理器安装"
+    env: [local, matrix]
+    files: [test/local/method_test.go, .github/workflows/integration.yml]
+    defects: [E1, F10]
+    phase: 1
+    status: pending
+
+  - id: SC-M03
+    desc: "method: container 以容器方式运行（消费 image）"
+    env: [local]
+    files: [test/local/method_test.go]
+    defects: [E1]
+    phase: 1
+    status: pending
+
+  - id: SC-M04
+    desc: "method: source 拉源码编译安装"
+    env: [local]
+    files: [test/local/method_test.go]
+    defects: [E1]
+    phase: 1
+    status: pending
+
+  - id: SC-M05
+    desc: "method: script 执行脚本"
+    env: [local]
+    files: [test/local/method_test.go]
+    defects: []
+    phase: 1
+    status: pending
+
+  - id: SC-M06
+    desc: "method: manifest 对集群 kubectl apply"
+    env: [cluster]
+    files: [test/cluster/manifest_test.go]
+    defects: [E1, D5]
+    phase: 2
+    status: pending
+
+  # ---------- SC-D 下载与产物 ----------
+  - id: SC-D01
+    desc: 在线下载 + checksum 校验通过
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-D02
+    desc: checksum 不符则失败并删除残留文件
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: [F3]
+    phase: 1
+    status: pending
+
+  - id: SC-D03
+    desc: 下载失败重试耗尽则退出码非 0 且不打印 SUCCESS
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: [F4, G8]
+    phase: 0
+    status: pending
+
+  - id: SC-D04
+    desc: 相对路径 target
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-D05
+    desc: 绝对路径 target 的 LocalPath 正确
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: [F3]
+    phase: 1
+    status: pending
+
+  - id: SC-D06
+    desc: target 中使用 {{.Filename}} / {{.Ext}}
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: [E5]
+    phase: 1
+    status: pending
+
+  - id: SC-D07
+    desc: github_proxy 只对 github.com 生效，不误伤其他域名
+    env: [local]
+    files: [test/local/download_test.go]
+    defects: []
+    phase: 1
+    status: pending
+
+  - id: SC-D08
+    desc: 离线模式——缓存命中直接使用
+    env: [local]
+    files: [test/local/offline_test.go]
+    defects: []
+    phase: 1
+    status: pending
+
+  - id: SC-D09
+    desc: 离线模式——缓存缺失则明确报错而非静默
+    env: [local]
+    files: [test/local/offline_test.go]
+    defects: []
+    phase: 1
+    status: pending
+
+  - id: SC-D10
+    desc: 远程已存在同 hash 文件则跳过传输
+    env: [remote]
+    files: [test/remote/dispatch_test.go]
+    defects: [F6]
+    phase: 1
+    status: pending
+
+  - id: SC-D11
+    desc: 操作机无 wget 时仍能下载
+    env: [local, matrix]
+    files: [test/local/download_test.go, .github/workflows/ci.yml]
+    defects: [F5]
+    phase: 1
+    status: pending
+
+  # ---------- SC-F 失败、诊断与恢复 ----------
+  - id: SC-F01
+    desc: hosts 引用未声明主机则明确报错，绝不兜底到本机
+    env: [local]
+    files: [test/local/node_resolve_test.go]
+    defects: [D1]
+    phase: 0
+    status: pending
+
+  - id: SC-F02
+    desc: SSH 不可达则报错含节点 / 用户 / IP
+    env: [local]
+    files: [test/local/failure_test.go]
+    defects: [D2]
+    phase: 0
+    status: pending
+
+  - id: SC-F03
+    desc: sshKey 波浪号展开（分发与执行两条路径一致）
+    env: [remote]
+    files: [test/remote/sshkey_test.go]
+    defects: [F6]
+    phase: 1
+    status: pending
+
+  - id: SC-F04
+    desc: pre_install 非零退出则中止，post_install 不执行
+    env: [local]
+    files: [test/local/failure_test.go]
+    defects: [D2]
+    phase: 0
+    status: pending
+
+  - id: SC-F05
+    desc: 多节点中部分节点失败则按策略处理并汇总
+    env: [multinode]
+    files: [test/multinode/onerror_test.go]
+    defects: [D2, E4]
+    phase: 1
+    status: pending
+
+  - id: SC-F06
+    desc: 模板引用不存在的变量则明确报错
+    env: [local]
+    files: [test/local/template_test.go]
+    defects: [F2]
+    phase: 0
+    status: pending
+
+  - id: SC-F07
+    desc: 配置含未知字段则拒绝而非静默忽略
+    env: [local]
+    files: [test/local/config_test.go]
+    defects: [E1, G7]
+    phase: 0
+    status: pending
+
+  - id: SC-F08
+    desc: 中途失败后重跑可继续（不因残留而失败）
+    env: [local]
+    files: [test/local/idempotency_test.go]
+    defects: [E4]
+    phase: 1
+    status: pending
+
+  # ---------- SC-K Kubernetes ----------
+  - id: SC-K01
+    desc: 单 master，runtime = containerd
+    env: [cluster]
+    files: [test/cluster/single_node_test.go]
+    defects: [D3, F7, F8]
+    phase: 2
+    status: pending
+
+  - id: SC-K02
+    desc: 单 master，runtime = docker + cri-dockerd
+    env: [cluster]
+    files: [test/cluster/single_node_test.go]
+    defects: [D6]
+    phase: 2
+    status: pending
+
+  - id: SC-K03
+    desc: 1 master + N worker，worker 成功 Join
+    env: [cluster]
+    files: [test/cluster/multi_node_test.go]
+    defects: [D4]
+    phase: 2
+    status: pending
+
+  - id: SC-K04
+    desc: 3 master HA（--control-plane-endpoint + --upload-certs）
+    env: [cluster]
+    files: [test/cluster/ha_test.go]
+    defects: [F9]
+    phase: 2
+    status: pending
+
+  - id: SC-K05
+    desc: 多 master 但未提供 VIP/LB 则明确拒绝并给出指引
+    env: [local]
+    files: [test/local/cluster_reject_test.go]
+    defects: [F9]
+    phase: 2
+    status: pending
+
+  - id: SC-K06
+    desc: CNI = calico，节点 Ready
+    env: [cluster]
+    files: [test/cluster/cni_test.go]
+    defects: [D5]
+    phase: 2
+    status: pending
+
+  - id: SC-K07
+    desc: CNI = flannel，节点 Ready
+    env: [cluster]
+    files: [test/cluster/cni_test.go]
+    defects: [D5]
+    phase: 2
+    status: pending
+
+  - id: SC-K08
+    desc: 版本矩阵 1.28 / 1.29 / 1.30
+    env: [cluster]
+    files: [test/cluster/version_matrix_test.go]
+    defects: [D6]
+    phase: 2
+    status: pending
+
+  - id: SC-K09
+    desc: 跨节点 Pod 互通
+    env: [cluster]
+    files: [test/cluster/multi_node_test.go]
+    defects: [D5]
+    phase: 2
+    status: pending
+
+  - id: SC-K10
+    desc: NodePort 服务从宿主可访问
+    env: [cluster]
+    files: [test/cluster/single_node_test.go]
+    defects: [D5]
+    phase: 2
+    status: pending
+
+  - id: SC-K11
+    desc: cluster remove 后环境干净（无 /etc/kubernetes 残留）
+    env: [cluster]
+    files: [test/cluster/lifecycle_test.go]
+    defects: [E2]
+    phase: 2
+    status: pending
+
+  - id: SC-K12
+    desc: 扩容——新增 worker 节点
+    env: [cluster]
+    files: [test/cluster/scale_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-K13
+    desc: 缩容——drain + delete + reset
+    env: [cluster]
+    files: [test/cluster/scale_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-K14
+    desc: preflight——swap / sysctl / 内核模块 / 防火墙 / 时间同步
+    env: [local, cluster]
+    files: [test/local/cluster_reject_test.go, test/cluster/preflight_test.go]
+    defects: [F8, F10]
+    phase: 2
+    status: pending
+
+  - id: SC-K15
+    desc: 1.24 分界——大于等于 1.24 拒绝 dockershim，小于等于 1.23 允许
+    env: [local]
+    files: [test/local/cluster_reject_test.go]
+    defects: [D6]
+    phase: 2
+    status: pending
+
+  # ---------- SC-S Swarm ----------
+  - id: SC-S01
+    desc: 初始化 manager
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-S02
+    desc: worker 加入
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-S03
+    desc: 第二个 manager 加入
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-S04
+    desc: 集群移除
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  # ---------- SC-C 周边子系统 ----------
+  - id: SC-C01
+    desc: docker 安装 / 指定版本 / 卸载
+    env: [local, multinode]
+    files: [test/local/docker_test.go, test/multinode/docker_test.go]
+    defects: [D7, G5]
+    phase: 1
+    status: pending
+
+  - id: SC-C02
+    desc: compose 安装（amd64 与 arm64）
+    env: [local, matrix]
+    files: [test/local/compose_test.go, .github/workflows/ci.yml]
+    defects: [D8, D9, F13]
+    phase: 1
+    status: pending
+
+  - id: SC-C03
+    desc: registry（harbor）安装
+    env: [local]
+    files: [test/local/registry_test.go]
+    defects: []
+    phase: 3
+    status: pending
+
+  - id: SC-C04
+    desc: registry 镜像同步
+    env: [local]
+    files: [test/local/registry_test.go]
+    defects: [E6]
+    phase: 3
+    status: pending
+
+  - id: SC-C05
+    desc: images pull / save / load / list 全生命周期
+    env: [local]
+    files: [test/local/images_test.go]
+    defects: [F14]
+    phase: 3
+    status: pending
+
+  - id: SC-C06
+    desc: apply 应用配置
+    env: [cluster]
+    files: [test/cluster/manifest_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  # ---------- SC-P 平台兼容 ----------
+  - id: SC-P01
+    desc: 目标节点 CentOS 7（yum）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P02
+    desc: 目标节点 Rocky / RHEL 9（dnf）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P03
+    desc: 目标节点 Ubuntu 22.04（apt）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P04
+    desc: 目标节点 Debian 12（apt）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P05
+    desc: 目标节点 openSUSE Leap 15（zypper）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P06
+    desc: 目标节点 Alpine（apk）
+    env: [matrix]
+    files: [.github/workflows/integration.yml]
+    defects: [F10]
+    phase: 3
+    status: pending
+
+  - id: SC-P07
+    desc: 目标架构 arm64
+    env: [matrix]
+    files: [.github/workflows/e2e.yml]
+    defects: []
+    phase: 3
+    status: pending
+
+  - id: SC-P08
+    desc: 操作机 Linux
+    env: [matrix]
+    files: [.github/workflows/ci.yml]
+    defects: [F5, F12]
+    phase: 3
+    status: pending
+
+  - id: SC-P09
+    desc: 操作机 macOS（无 wget）
+    env: [matrix]
+    files: [.github/workflows/ci.yml]
+    defects: [F5, F12]
+    phase: 3
+    status: pending
+
+  - id: SC-P10
+    desc: 5 平台交叉编译产物可用
+    env: [matrix]
+    files: [.github/workflows/ci.yml]
+    defects: []
+    phase: 0
+    status: done
+
+  # ---------- SC-X CLI 与工程基线 ----------
+  - id: SC-X01
+    desc: --workdir 改变全部派生目录
+    env: [local]
+    files: [test/local/workdir_test.go]
+    defects: []
+    phase: 0
+    status: pending
+
+  - id: SC-X02
+    desc: --debug 输出诊断日志
+    env: [local]
+    files: [test/local/cli_debug_test.go]
+    defects: []
+    phase: 0
+    status: done
+
+  - id: SC-X03
+    desc: SOMCLI_OFFLINE / 离线开关生效
+    env: [local]
+    files: [test/local/offline_test.go]
+    defects: [F12]
+    phase: 1
+    status: pending
+
+  - id: SC-X04
+    desc: 文档中出现的每条命令与标志真实存在
+    env: [local]
+    files: [test/local/doc_commands_test.go]
+    defects: [G4, G5]
+    phase: 0
+    status: pending
+
+  - id: SC-X05
+    desc: configs 下每个示例文件都能被解析并渲染
+    env: [local]
+    files: [test/local/config_test.go]
+    defects: [F2, G7]
+    phase: 0
+    status: pending
+
+  - id: SC-X06
+    desc: 失败时退出码非 0（可被 CI 与调用方感知）
+    env: [local]
+    files: [test/local/exitcode_test.go]
+    defects: [D2, F4, G8]
+    phase: 0
+    status: done
