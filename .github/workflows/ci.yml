@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: 静态检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      # 必须用 gofmt -l（只列不改）。旧的 test.yml 用的是 go fmt ./...，
+      # 它会就地改写文件并始终退出 0 —— 是个永远通过的假检查。
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化，请运行 gofmt -w ./..."
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: yamllint configs
+        run: pipx install yamllint && yamllint -d relaxed configs/
+
+      # 功能验证一律黑盒：test/ 下只允许用 os/exec 跑编译出来的二进制。
+      # 一旦有用例 import 本仓库的包，断言的就是内部实现而不是工具行为。
+      - name: test 不得 import 本仓库包
+        run: |
+          if grep -rn "structure-projects/somcli" test/; then
+            echo "test/ 下禁止 import 本仓库包：功能验证一律通过二进制黑盒进行"
+            exit 1
+          fi
+
+  test:
+    name: 功能验证 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      # 默认只跑 local 组（remote / multinode 由 build tag 隔离，见 integration.yml）。
+      # 三种操作机同时跑是 SC-P08 / SC-P09 的载体。
+      # 不设覆盖率门槛：覆盖率是白盒指标，进度以 test/matrix.yaml 的场景数衡量。
+      - name: 测试
+        run: go test ./... -count=1 -race
+
+  build:
+    name: 交叉编译 ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      # SC-P10：5 平台交叉编译产物可用。
+      # 编到真实文件而非 /dev/null，这样能顺带断言产物非空；
+      # 与宿主同架构的那一组再跑一次 version，证明产物真的能执行。
+      - name: 编译
+        run: |
+          out="dist/somcli-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p dist
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o "$out" .
+          test -s "$out" || { echo "产物为空: $out"; exit 1; }
+
+      - name: 冒烟执行
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: ./dist/somcli-linux-amd64 version
