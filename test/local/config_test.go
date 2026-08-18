@@ -17,6 +17,7 @@ package local
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -154,31 +155,45 @@ func TestSC_F07_MalformedYamlRejected(t *testing.T) {
 	}
 }
 
-// TestD9_HelpHasNoSideEffects 看帮助不得产生任何副作用。
+// TestSC_X07_HelpHasNoSideEffects 看帮助不得产生任何副作用。
 //
 // docker-compose 是透传命令，DisableFlagParsing 让 --help 也成了透传参数，
 // 于是 somcli docker-compose --help 会走进"compose 缺失就自动下载安装"的分支：
 // 用户只想看用法，工具却去动网络和文件系统。这里对每个叶子命令跑 --help，
 // 并对 workdir 与 HOME 做前后快照 —— 帮助是纯只读的，快照必须一模一样。
-func TestD9_HelpHasNoSideEffects(t *testing.T) {
+func TestSC_X07_HelpHasNoSideEffects(t *testing.T) {
 	commands := [][]string{
 		{"--help"},
 		{"install", "--help"},
 		{"download", "--help"},
 		{"version", "--help"},
+		{"apply", "--help"},
+		{"get", "--help"},
+		{"delete", "--help"},
+		{"describe", "--help"},
 		{"docker", "--help"},
+		{"docker", "install", "--help"},
+		{"docker", "status", "--help"},
+		{"docker", "uninstall", "--help"},
 		{"docker-compose", "--help"},
 		{"docker-compose", "-h"},
-		{"compose", "--help"},
 		{"cluster", "--help"},
+		{"cluster", "create", "--help"},
+		{"cluster", "remove", "--help"},
 		{"images", "--help"},
+		{"images", "pull", "--help"},
+		{"images", "push", "--help"},
+		{"images", "export", "--help"},
+		{"images", "import", "--help"},
 		{"registry", "--help"},
-		{"resources", "--help"},
+		{"registry", "install", "--help"},
+		{"registry", "sync", "--help"},
+		{"registry", "uninstall", "--help"},
 	}
 
 	for _, args := range commands {
 		args := args
-		t.Run("D9/"+strings.Join(args, " "), func(t *testing.T) {
+		t.Run("SC-X07/"+strings.Join(args, " "), func(t *testing.T) {
 			workdir := t.TempDir()
 			home := t.TempDir()
 
@@ -213,12 +228,12 @@ func runHelp(t *testing.T, workdir, home string, args ...string) (int, string) {
 	bin := somcliBinary(t)
 	full := append([]string{"--workdir", workdir}, args...)
 
-	cmd := execCommand(bin, full...)
+	cmd := exec.Command(bin, full...)
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	out, err := cmd.CombinedOutput()
 
 	code := 0
-	if exitErr, ok := err.(*exitError); ok {
+	if exitErr, ok := err.(*exec.ExitError); ok {
 		code = exitErr.ExitCode()
 	} else if err != nil {
 		t.Fatalf("执行 %v 失败: %v\n%s", args, err, out)

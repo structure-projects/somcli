@@ -25,3 +25,6 @@ go.work.sum
 # env file
 .env
 .idea
+
+# 默认工作目录：不传 --workdir 时安装产物会落在这里
+somwork/

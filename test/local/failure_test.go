@@ -100,6 +100,9 @@ resources:
 // 排查 SSH 问题要的三样东西是节点名、登录用户、IP —— 缺一样就得回去翻配置。
 // 注意断言里还要求不出现 127.0.0.1：那意味着又兜底回本机了。
 func TestSC_F02_UnreachableNodeReportsNodeUserIP(t *testing.T) {
+	// SSH ConnectTimeout=30，这条用例注定要等满一个超时，与别的用例并行跑掉。
+	t.Parallel()
+
 	workdir := t.TempDir()
 	cfg := writeConfig(t, `
 nodes:

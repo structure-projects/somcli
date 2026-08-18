@@ -16,6 +16,7 @@ limitations under the License.
 package local
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,12 +57,12 @@ resources:
 	}
 }
 
-// TestSC_E13_ShellOperatorsSurviveRendering F1 的回归：模板不得转义 shell 字符。
+// TestSC_E13_ShellOperatorsWork 配置里的 shell 运算符要一路活着到 sh 手上。
 //
-// ParseStr 曾经用 html/template，&& 会被渲染成 &amp;&amp;、| 变成 &#124;，
-// 于是配置里写的命令交到 sh 手上已经不是原来那条。配置里的字符串是给 shell 执行的，
-// 不是输出到 HTML 的。这里用 && 串联、用 | 过滤，并把带引号的文本原样写盘。
-func TestSC_E13_ShellOperatorsSurviveRendering(t *testing.T) {
+// 注意这条用例并不是 F1 的回归（html/template 只转义插值出来的内容，不动模板字面量，
+// 所以字面量里的 && | 在 F1 缺陷下也是好的）——真正的 F1 回归见下一条。
+// 这条守的是另一件事：脚本被当成整条命令行交给 shell，而不是被拆成 argv 直接 exec。
+func TestSC_E13_ShellOperatorsWork(t *testing.T) {
 	workdir := t.TempDir()
 	cfg := writeConfig(t, `
 resources:
@@ -70,7 +71,6 @@ resources:
     post_install:
       - "echo first > {{.WorkDir}}/chained.txt && echo second >> {{.WorkDir}}/chained.txt"
       - "echo keep-me | tr 'a-z' 'A-Z' > {{.WorkDir}}/piped.txt"
-      - "echo 'a&b<c>d' > {{.WorkDir}}/escaped.txt"
 `)
 
 	code, out := runIn(t, workdir, "install", "-f", cfg)
@@ -84,8 +84,37 @@ resources:
 	if got := strings.TrimSpace(readFile(t, filepath.Join(workdir, "piped.txt"))); got != "KEEP-ME" {
 		t.Errorf("管道未生效，产物 = %q。输出：\n%s", got, out)
 	}
-	if got := strings.TrimSpace(readFile(t, filepath.Join(workdir, "escaped.txt"))); got != "a&b<c>d" {
-		t.Errorf("模板转义了 shell 字符，产物 = %q，期望 %q（html/template 会渲染成 a&amp;b&lt;c&gt;d）", got, "a&b<c>d")
+}
+
+// TestSC_E13_SpecialCharsInValuesSurviveRendering F1 的回归：渲染出的值不得被 HTML 转义。
+//
+// ParseStr 曾经用 html/template，而它只对插值结果动手 —— 所以必须让特殊字符出现在
+// 值里，而不是模板字面量里。这里让 workdir 路径带上 ' 与 &，资源名也带上 &：
+// 在缺陷版本上 {{.WorkDir}} 会渲染成 it&#39;s&amp;fine，产物落到一个没人找得到的
+// 路径上，命令行看起来还一切正常。
+func TestSC_E13_SpecialCharsInValuesSurviveRendering(t *testing.T) {
+	workdir := filepath.Join(t.TempDir(), "it's&fine")
+	if err := os.MkdirAll(workdir, 0o755); err != nil {
+		t.Fatalf("创建带特殊字符的 workdir 失败: %v", err)
+	}
+
+	cfg := writeConfig(t, `
+resources:
+  - name: amp&tool
+    version: "1.0"
+    post_install:
+      - 'echo "name={{.Name}}" > "{{.WorkDir}}/rendered.txt"'
+`)
+
+	code, out := runIn(t, workdir, "install", "-f", cfg)
+	if code != 0 {
+		t.Fatalf("workdir 含 ' 与 & 时安装退出码 = %d，输出：\n%s", code, out)
+	}
+
+	// 文件不在这个路径上，就说明 {{.WorkDir}} 被转义了。
+	got := strings.TrimSpace(readFile(t, filepath.Join(workdir, "rendered.txt")))
+	if got != "name=amp&tool" {
+		t.Errorf("渲染结果被转义，产物 = %q，期望 %q", got, "name=amp&tool")
 	}
 }
 

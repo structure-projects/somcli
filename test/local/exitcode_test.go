@@ -16,84 +16,10 @@ limitations under the License.
 package local
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 )
-
-const repoRoot = "../.."
-
-var (
-	buildOnce sync.Once
-	binPath   string
-	buildErr  error
-	buildOut  string
-)
-
-// somcliBinary 编译一份真实的二进制。
-//
-// SC-X06 断言的是**进程退出码**，这是 CI 与外层脚本唯一能感知的信号，
-// 只有跑真二进制才测得到——直接调函数看返回值绕过了 cmd 层的 os.Exit。
-func somcliBinary(t *testing.T) string {
-	t.Helper()
-
-	buildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "somcli-exitcode")
-		if err != nil {
-			buildErr = err
-			return
-		}
-		out := filepath.Join(dir, "somcli")
-		cmd := exec.Command("go", "build", "-o", out, ".")
-		cmd.Dir = repoRoot
-		combined, err := cmd.CombinedOutput()
-		buildOut = string(combined)
-		if err != nil {
-			buildErr = err
-			return
-		}
-		binPath = out
-	})
-
-	if buildErr != nil {
-		t.Fatalf("编译 somcli 失败: %v\n%s", buildErr, buildOut)
-	}
-	return binPath
-}
-
-// run 执行一次 somcli，返回退出码与合并输出。
-// 每次都指定 --workdir，避免用例把 somwork 写进仓库。
-func run(t *testing.T, args ...string) (int, string) {
-	t.Helper()
-
-	bin := somcliBinary(t)
-	full := append([]string{"--workdir", t.TempDir()}, args...)
-
-	cmd := exec.Command(bin, full...)
-	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
-	out, err := cmd.CombinedOutput()
-
-	code := 0
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		code = exitErr.ExitCode()
-	} else if err != nil {
-		t.Fatalf("执行 %v 失败: %v\n%s", args, err, out)
-	}
-	return code, string(out)
-}
-
-// writeConfig 落一份临时配置，返回路径。
-func writeConfig(t *testing.T, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "install.yaml")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("写配置失败: %v", err)
-	}
-	return path
-}
 
 // TestSC_X06_InstallFailureExitsNonZero 是整条信号链的终点断言。
 //

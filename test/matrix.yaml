@@ -29,7 +29,7 @@ scenarios:
     files: [test/local/engine_test.go]
     defects: []
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E02
     desc: 本机安装多个资源，严格按 resources 数组顺序
@@ -37,7 +37,7 @@ scenarios:
     files: [test/local/engine_test.go]
     defects: []
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E03
     desc: 单个远程节点安装
@@ -75,9 +75,9 @@ scenarios:
     desc: 按名称安装单个资源（install -n）
     env: [local]
     files: [test/local/engine_test.go]
-    defects: []
+    defects: [D11]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E08
     desc: 重复执行幂等，不产生重复副作用
@@ -296,7 +296,7 @@ scenarios:
     files: [test/local/node_resolve_test.go]
     defects: [D1]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-F02
     desc: SSH 不可达则报错含节点 / 用户 / IP
@@ -304,7 +304,7 @@ scenarios:
     files: [test/local/failure_test.go]
     defects: [D2]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-F03
     desc: sshKey 波浪号展开（分发与执行两条路径一致）
@@ -320,7 +320,7 @@ scenarios:
     files: [test/local/failure_test.go]
     defects: [D2]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-F05
     desc: 多节点中部分节点失败则按策略处理并汇总
@@ -336,7 +336,7 @@ scenarios:
     files: [test/local/template_test.go]
     defects: [F2]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-F07
     desc: 配置含未知字段则拒绝而非静默忽略
@@ -344,7 +344,7 @@ scenarios:
     files: [test/local/config_test.go]
     defects: [E1, G7]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-F08
     desc: 中途失败后重跑可继续（不因残留而失败）
@@ -645,7 +645,7 @@ scenarios:
     files: [test/local/workdir_test.go]
     defects: []
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-X02
     desc: --debug 输出诊断日志
@@ -686,3 +686,23 @@ scenarios:
     defects: [D2, F4, G8]
     phase: 0
     status: done
+
+  - id: SC-X07
+    desc: 看帮助不产生任何副作用（含 docker-compose 透传命令）
+    env: [local]
+    files: [test/local/config_test.go]
+    defects: [D9]
+    phase: 0
+    status: done
+
+  # 写用例时新发现：docker-compose 用 DisableFlagParsing 做透传，于是 cobra 连
+  # somcli 自己的全局 flag 都不解析，`somcli --workdir X docker-compose up` 既丢了
+  # workdir（产物落回 ./somwork），又把 --workdir X 当成 compose 的参数透传下去。
+  # 判据要观察到 compose 真的被调用，本机没有 compose 观察不到，故归到 cluster 环境。
+  - id: SC-X08
+    desc: 透传命令下 somcli 的全局 flag 正确生效且不泄漏给下游
+    env: [cluster]
+    files: [test/cluster/compose_passthrough_test.go]
+    defects: [D10]
+    phase: 1
+    status: pending
