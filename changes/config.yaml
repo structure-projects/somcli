@@ -1,0 +1,91 @@
+# Changes 配置（项目级）
+# 本文件由 install.sh 安装到目标项目，控制 Changes 层和信任级别行为。
+
+# ===== 信任级别 =====
+# 三级：strict / standard / autonomous
+# 默认：standard
+# 详见 _common/rules/common-core.mdc / wiki/_common/trust-level.md
+
+trust-level: standard
+
+# 项目级额外自动决策项（在 standard 基础上更松）
+extra-auto-decisions: []
+  # - project-form      # 本项目形态已确定，不用再问
+  # - branch-naming
+
+# 项目级额外必须确认项（在 standard 基础上更严）
+extra-require-confirm: []
+  # - pkg-publish       # 本项目发布要额外确认
+  # - helm-upgrade
+
+# ===== Changes 工作流状态机 =====
+
+# 显式指针：当前活跃提案（changes/proposals/<current>/），供编排器定位；
+# 多 agent 并发场景下先检查 status 字段再操作；完成后置空或切换。
+current-proposal: "20260818-migrate-phase0-trusted-signal"
+
+# autonomous 模式下项目形态（project-form）的全局 fallback 选择。
+# fallback 链：stack-constraints.<stack>.project-form.default（栈级，最高）
+#             → 本 default-project-form（项目级）
+#             → 仍未配置 → autonomous 下项目形态 HITL 升级 L0 阻塞
+# 可选：DDD-7-plus-1 | single-4-modules | single-module | 其他（如 wujie 微前端子应用）
+default-project-form: ""
+
+# ===== 变更管理 =====
+
+# 默认变更级别（当 AI 不确定时）
+default-change-level: major  # trivial | minor | major | hotfix | migration
+
+# 是否强制要求 proposal（false 则 trivial 级别可跳过）
+require-proposal: true
+
+# 是否强制要求 review
+require-review: true
+
+# 是否强制要求 changelog
+require-changelog: true
+
+# ===== SDLC 流程 =====
+
+# 是否启用双流程（新项目 HLD→LLD→coding / 历史项目直接 coding）
+enable-dual-flow: true
+
+# 是否强制要求 HLD（仅新项目）
+require-hld-for-new-project: true
+
+# 是否强制要求 LLD（仅 major 变更）
+require-lld-for-major: true
+
+# ===== Autonomous 高级配置（预留字段，本提案暂不实现具体告警通道） =====
+
+# L0 阻塞时的外部告警通道配置
+# alert-channels:
+#   - type: webhook
+#     url: https://im.example.com/incoming/xxx
+#     headers:
+#       Content-Type: application/json
+#   - type: email
+#     to: sre@example.com
+
+# L0 阻塞未人工处理的超时升级时间（小时）
+# blocked-timeout-hours: 24
+
+# L1 跳过项的人工复核窗口期（小时），超过未复核下次 ci-gate 升级为 L0 阻塞
+# l1-review-window-hours: 24
+
+# 项目级强制 L0 升级（将 L1 提升为 L0，strict/standard 更严）
+# extra-l0-items:
+#   - confirm-prod-deploy
+
+# 项目级允许 L2 降级（将 L1 降低为 L2，autonomous 更松）
+# extra-l2-items:
+#   - commit-msg
+
+# ===== 工具权限白名单 =====
+
+# 是否由 install.sh 自动生成各工具权限配置
+# 启用后按 trust-level 自动生成 .cursor/permissions.json / .claude/settings.json 等
+permissions:
+  enabled: false        # 默认不启用，需显式 --permissions 或改为 true
+  trust-level: standard # 覆盖上面的 trust-level（如需单独指定）
+
