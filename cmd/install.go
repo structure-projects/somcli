@@ -40,17 +40,18 @@ var installCmd = &cobra.Command{
 - binary:  Install pre-built binaries
 - source:  Compile from source code
 - container: Run as container`,
-	Example: `  # Install single tool
-  somcli install --tool k9s --method binary
-  
-  # Batch install from config
-  somcli install -f configs/install.yaml`,
+	Example: `  # Batch install from config
+  somcli install -f configs/install.yaml
+
+  # Install a single resource declared in the config
+  somcli install -f configs/install.yaml -n kubectl`,
 	Run: runInstall,
 }
 
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().StringVarP(&installConfigFile, "file", "f", "", "Installation config file path")
+	installCmd.Flags().StringVarP(&installToolName, "name", "n", "", "Only install the resource with this name")
 
 	rootCmd.AddCommand(downloadCmd)
 
@@ -64,6 +65,13 @@ func runInstall(cmd *cobra.Command, args []string) {
 	inst := installer.NewInstaller()
 
 	switch {
+	// -n 只装配置里被点名的那一个资源。InstallTool 早就写好，只是没有入口接上。
+	case installConfigFile != "" && installToolName != "":
+		if err := inst.InstallTool(installConfigFile, installToolName, quiet); err != nil {
+			fmt.Fprintf(os.Stderr, "Install %s failed: %v\n", installToolName, err)
+			os.Exit(1)
+		}
+
 	case installConfigFile != "":
 		if err := inst.InstallFromFile(installConfigFile, quiet); err != nil {
 			fmt.Fprintf(os.Stderr, "Batch install failed: %v\n", err)
@@ -71,7 +79,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 		}
 
 	default:
-		fmt.Fprintln(os.Stderr, "Error: must specify --file or --tool")
+		fmt.Fprintln(os.Stderr, "Error: must specify --file")
 		cmd.Help()
 		os.Exit(1)
 	}
