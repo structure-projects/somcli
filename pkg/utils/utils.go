@@ -24,7 +24,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
-	"html/template"
 	"io"
 	"net/url"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"io/ioutil"
 
