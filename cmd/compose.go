@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"github.com/structure-projects/somcli/pkg/compose"
 )
@@ -56,7 +57,7 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			// 查看帮助不得产生任何副作用。透传路径会在 compose 缺失时自动下载安装，
 			// 所以帮助必须在触碰安装器之前拦掉。
-			if isHelpRequest(args) {
+			if isHelpRequest(cmd.Root().PersistentFlags(), args) {
 				_ = cmd.Help()
 				return
 			}
@@ -145,16 +146,35 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 }
 
 // isHelpRequest 判断这次调用是不是在要帮助。
-// 只认第一个参数，避免误吞 `compose logs -h` 这类要透传给 compose 的形式。
-func isHelpRequest(args []string) bool {
-	if len(args) == 0 {
-		return true
+//
+// DisableFlagParsing 之下 cobra 连 somcli 自己的全局 flag 都不解析，而是一并塞进 args：
+// `somcli --workdir /tmp/x docker-compose --help` 的 args[0] 是 --workdir 而不是 --help。
+// 所以要先跳过头部属于 somcli 的全局 flag（全局 flag 只可能出现在子命令名之前），
+// 再看第一个真正给 compose 的参数。只认这一个，避免误吞 `docker-compose logs -h`
+// 这类本该透传下去的写法。
+func isHelpRequest(globals *pflag.FlagSet, args []string) bool {
+	for len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			return true
+		}
+		if !strings.HasPrefix(args[0], "-") {
+			return false
+		}
+
+		name, _, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
+		flag := globals.Lookup(name)
+		if flag == nil {
+			// 不是 somcli 的全局 flag，那就是 compose 自己的，透传。
+			return false
+		}
+		args = args[1:]
+		if !hasValue && flag.Value.Type() != "bool" && len(args) > 0 {
+			args = args[1:] // 连它的取值一起跳过
+		}
 	}
-	switch args[0] {
-	case "-h", "--help", "help":
-		return true
-	}
-	return false
+	// 只给了全局 flag，等同于没给 compose 任何参数。
+	return true
 }
 
 // todo env file 提取到root上
