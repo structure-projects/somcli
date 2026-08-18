@@ -57,6 +57,17 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 其余 13 个（SC-E02/E07/E13、SC-D01/D03/D04、SC-F01/F02/F04/F06/F07、SC-X01/X05）已回退为
 `pending`，由本里程碑用黑盒用例重新兑现。**宁可进度数字变小，也不要用白盒断言冒充功能验证。**
 
+### 写黑盒用例时新发现的缺陷
+
+写用例的价值不止于防回归 —— 下面两项是补 M0.3 用例时被用例本身逼出来的，
+静态阅读代码看不出来（都属于「代码写好了但没接线」这一类，与 D1 同源）。
+
+| 编号 | 位置 | 问题 | 处置 |
+|---|---|---|---|
+| D10 | `cmd/compose.go` | 透传用的 `DisableFlagParsing` 让 cobra 连 somcli 自己的全局 flag 都不解析：`somcli --workdir X docker-compose up` 既丢了 `--workdir`（产物落回 `./somwork`），又把 `--workdir X` 当成 compose 的参数透传下去。**同一根因让 D9 的修复漏了一半** —— `args[0]` 是 `--workdir` 而不是 `--help`，帮助拦截失效，实测 `somcli --workdir /tmp/x docker-compose --help` 仍然去下载安装。 | 帮助拦截这一半在本里程碑修（跳过头部的全局 flag 再判断，`isHelpRequest` 接收 root 的 `PersistentFlags`）；全局 flag 真正生效这一半需要重排透传命令的解析时机，记为 SC-X08 留给 M1 |
+| D11 | `cmd/install.go` | `installer.InstallTool(file, name, quiet)` 早已实现，但 `-n/--name` 从未注册 → 按名安装（SC-E07）整条路径不可达，`somcli install -f cfg -n b` 报 `unknown shorthand flag: 'n'`。 | 已修：注册 `-n/--name` 并接上 `InstallTool` |
+
+
 ### 本里程碑剩余范围
 
 | 场景 | 缺什么 |
