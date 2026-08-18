@@ -50,8 +50,17 @@ Examples:
   somcli docker-compose ps          # Auto -a
   somcli docker-compose logs -f     # Passthrough with signals
   somcli docker-compose --env-file .env.prod up`,
+		// 透传模式需要 DisableFlagParsing，否则 -d/-f 等会被 cobra 抢走。
+		// 代价是 --help 也变成透传参数，因此必须在 Run 里显式拦截，见下。
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
+			// 查看帮助不得产生任何副作用。透传路径会在 compose 缺失时自动下载安装，
+			// 所以帮助必须在触碰安装器之前拦掉。
+			if isHelpRequest(args) {
+				_ = cmd.Help()
+				return
+			}
+
 			if envFile != "" {
 				if _, err := os.Stat(envFile); err == nil {
 					os.Setenv("COMPOSE_FILE", envFile)
@@ -133,6 +142,19 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(versionCmd)
+}
+
+// isHelpRequest 判断这次调用是不是在要帮助。
+// 只认第一个参数，避免误吞 `compose logs -h` 这类要透传给 compose 的形式。
+func isHelpRequest(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		return true
+	}
+	return false
 }
 
 // todo env file 提取到root上
