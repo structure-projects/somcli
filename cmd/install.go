@@ -96,12 +96,12 @@ func executeOfflineDownload() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	results, err := installer.DownloadResources(config, quiet)
-	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
-	}
-
+	// 先打印明细再返回错误，便于定位是哪个资源失败
+	results, downloadErr := installer.DownloadResources(config, quiet)
 	printDownloadResults(results)
+	if downloadErr != nil {
+		return fmt.Errorf("download failed: %w", downloadErr)
+	}
 	return nil
 }
 

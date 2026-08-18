@@ -86,24 +86,36 @@ func DownloadSingleFile(downloader *utils.Downloader, res types.Resource, url st
 			_ = os.Remove(fullPath)
 		}
 	}
+
+	if result.Error != nil {
+		utils.PrintError("%s %s 下载失败 %s -> %v", result.Name, result.Version, result.URL, result.Error)
+		return result
+	}
 	utils.PrintSuccess("%s %s 成功下载 %s", result.Name, result.Version, result.LocalPath)
 
 	return result
 }
 
-// DownloadResources 执行批量下载
+// DownloadResources 执行批量下载。任一资源失败即返回错误，使调用方的退出码非 0。
 func DownloadResources(config *types.ResourceConfig, quiet bool) ([]types.DownloadResult, error) {
 	// 初始化下载器
 	downloader := utils.NewDownloader(config.Proxy)
 	downloader.SetQuiet(quiet)
 
 	var results []types.DownloadResult
+	var failed int
 	for _, res := range config.Resources {
 		for _, url := range res.URLs {
 			result := DownloadSingleFile(downloader, res, url)
+			if result.Error != nil {
+				failed++
+			}
 			results = append(results, result)
 		}
 	}
 
+	if failed > 0 {
+		return results, fmt.Errorf("%d/%d 个资源下载失败", failed, len(results))
+	}
 	return results, nil
 }
