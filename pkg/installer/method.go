@@ -25,42 +25,53 @@ import (
 
 // applyMethod 是 method 的分发入口，在 pre_install 之后、post_install 之前执行。
 //
-// 每种 method 都不直接动手，而是把动作编译成一串 shell 命令交给 utils.RunScripts ——
-// 于是"本机执行还是逐节点远程执行"这件事只有一处实现（RunScripts），
-// 日志前缀、失败传播、后续的并发与容错策略也全部共享。
+// 每种 method 都不直接动手，只把动作**编译成一串 shell 命令**，由这里统一交给
+// utils.RunScriptsDetailed —— 于是"本机执行还是逐节点远程执行"这件事只有一处实现，
+// 日志前缀、失败传播、--parallel 与 on_error 也全部共享。
 // 各方法自己去 exec 的话，每加一种 method 就要重写一遍远程分支，
 // 而那些分支没有任何用例会走到 —— 正是 E1 这类"写了但从没生效"的来源。
-func applyMethod(res types.Resource, artifacts []types.DownloadResult) error {
+//
+// 返回的 RunOutcome 带着逐目标的失败名单，调用方据此在 on_error: continue 下
+// 把失败节点从 post_install 里剔掉（SC-F05）。
+func applyMethod(res types.Resource, artifacts []types.DownloadResult) (utils.RunOutcome, error) {
 	method := strings.ToLower(strings.TrimSpace(res.Method))
 
+	var (
+		cmds []string
+		err  error
+	)
 	switch method {
 	case "", "script":
 		// 动作就是 pre_install / post_install 本身，这里无事可做。
-		return nil
+		return utils.RunOutcome{}, nil
 	case "binary":
-		return installBinary(res, artifacts)
+		cmds, err = installBinary(res, artifacts)
 	case "package":
-		return installPackage(res)
+		cmds, err = installPackage(res)
 	case "container":
-		return installContainer(res)
+		cmds, err = installContainer(res)
 	case "source":
-		return installSource(res, artifacts)
+		cmds, err = installSource(res, artifacts)
 	case "manifest":
-		return fmt.Errorf("method: manifest 尚未实现（随集群编排在 M2 落地），当前可用：script / binary / package / container / source")
+		return utils.RunOutcome{}, fmt.Errorf("method: manifest 尚未实现（随集群编排在 M2 落地），当前可用：script / binary / package / container / source")
 	default:
 		// 认不出来必须报错。静默当成 script 跑正是 E1 的病症：
 		// 配置里写着 method: binary，实际什么都没做，而退出码是 0。
-		return fmt.Errorf("未知的 method %q，可用：script / binary / package / container / source", res.Method)
+		return utils.RunOutcome{}, fmt.Errorf("未知的 method %q，可用：script / binary / package / container / source", res.Method)
 	}
+	if err != nil {
+		return utils.RunOutcome{}, err
+	}
+	return runMethodScripts(res, cmds)
 }
 
 // runMethodScripts 执行方法生成的命令，日志里标明是哪种 method 在动手。
-func runMethodScripts(res types.Resource, cmds []string) error {
+func runMethodScripts(res types.Resource, cmds []string) (utils.RunOutcome, error) {
 	if len(cmds) == 0 {
-		return nil
+		return utils.RunOutcome{}, nil
 	}
 	utils.PrintStage("按 method: %s 实施 -> %s", strings.ToLower(res.Method), res.Name)
-	return utils.RunScripts(cmds, res)
+	return utils.RunScriptsDetailed(cmds, res)
 }
 
 // shellQuote 把字符串包成单引号形式的 shell 字面量。

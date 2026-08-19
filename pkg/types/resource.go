@@ -52,6 +52,8 @@ type Resource struct {
 	Build         []string          `yaml:"build"`          // method: source 的构建命令，在解压出的源码目录里执行
 	ExtraFiles    map[string]string `yaml:"extra_files"`    // 附加文件：目标路径 -> 内容，两者都过模板
 	Files         []string          `yaml:"files"`          // method: binary 时指定归档内要安装的文件，留空则安装归档里所有可执行文件
+	Check         string            `yaml:"check"`          // 幂等探针：在目标上执行，退出 0 视为已安装并跳过整个资源
+	OnError       string            `yaml:"on_error"`       // 失败策略：abort（默认，立即中止）/ continue（跳过失败目标与本资源，继续后续资源）
 }
 
 // DownloadResult 下载结果

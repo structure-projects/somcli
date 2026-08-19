@@ -40,13 +40,13 @@ var packageManagers = []struct {
 }
 
 // installPackage 实现 method: package —— 交给目标机器上的发行版包管理器。
-func installPackage(res types.Resource) error {
+func installPackage(res types.Resource) ([]string, error) {
 	pkg := res.Package
 	if pkg == "" {
 		pkg = res.Name
 	}
 	if pkg == "" {
-		return fmt.Errorf("method: package 需要 package: 或 name: 指明包名")
+		return nil, fmt.Errorf("method: package 需要 package: 或 name: 指明包名")
 	}
 
 	var b strings.Builder
@@ -61,7 +61,7 @@ func installPackage(res types.Resource) error {
 	fmt.Fprintf(&b, "else echo '未找到可用的包管理器（尝试过 %s）' >&2; exit 1; fi",
 		strings.Join(managerNames(), " / "))
 
-	return runMethodScripts(res, []string{b.String()})
+	return []string{b.String()}, nil
 }
 
 func managerNames() []string {

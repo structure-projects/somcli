@@ -28,12 +28,12 @@ import (
 // 不猜构建方式：不去试 ./configure / make / cargo / go build。
 // 猜错的代价是"报告装好了、其实什么都没编出来"，而 build: 写两行就说清了。
 // 归档里通常有一层顶层目录，需要的话在 build: 里自己 cd —— 显式好过 --strip-components 的隐式假设。
-func installSource(res types.Resource, artifacts []types.DownloadResult) error {
+func installSource(res types.Resource, artifacts []types.DownloadResult) ([]string, error) {
 	if len(artifacts) == 0 {
-		return fmt.Errorf("method: source 需要 urls: 指明源码归档")
+		return nil, fmt.Errorf("method: source 需要 urls: 指明源码归档")
 	}
 	if len(res.Build) == 0 {
-		return fmt.Errorf("method: source 需要 build: 指明构建命令（somcli 不猜构建方式）")
+		return nil, fmt.Errorf("method: source 需要 build: 指明构建命令（somcli 不猜构建方式）")
 	}
 
 	srcDir := filepath.Join(utils.GetDownloadDir(), res.Name, res.Version, "src")
@@ -44,7 +44,7 @@ func installSource(res types.Resource, artifacts []types.DownloadResult) error {
 	for _, art := range artifacts {
 		extract := archiveExtractCmd(art.LocalPath, srcDir)
 		if extract == "" {
-			return fmt.Errorf("method: source 的 %s 不是可识别的归档（支持 tar / tar.gz / tgz / tar.bz2 / tar.xz / zip）",
+			return nil, fmt.Errorf("method: source 的 %s 不是可识别的归档（支持 tar / tar.gz / tgz / tar.bz2 / tar.xz / zip）",
 				art.LocalPath)
 		}
 		cmds = append(cmds, extract)
@@ -57,5 +57,5 @@ func installSource(res types.Resource, artifacts []types.DownloadResult) error {
 		cmds = append(cmds, fmt.Sprintf("cd %s && %s", shellQuote(srcDir), step))
 	}
 
-	return runMethodScripts(res, cmds)
+	return cmds, nil
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/structure-projects/somcli/pkg/state"
 	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
 )
@@ -79,6 +80,23 @@ func (i *Installer) Uninstall(res types.Resource) error {
 	if err := utils.RunScripts(res.RemoveScripts, res); err != nil {
 		return fmt.Errorf("%s 卸载失败: %w", res.Name, err)
 	}
+
+	forgetInstalled(res)
 	utils.PrintSuccess("%s %s 已卸载", res.Name, res.Version)
 	return nil
+}
+
+// forgetInstalled 卸载成功后销掉状态记录。
+//
+// 不销的话下次 install 会被幂等判据拦住，打印"已记录为已安装，跳过"，
+// 而目标机上其实什么都没有 —— 状态参与决策就必须跟着卸载一起维护。
+func forgetInstalled(res types.Resource) {
+	store := state.Load()
+	for _, target := range utils.ScriptTargets(res) {
+		store.Forget(res.Name, target)
+	}
+	if err := store.Save(); err != nil {
+		utils.PrintWarning("状态未能写入 %s（%s 的安装记录仍在，下次 install 可能被跳过）: %v",
+			state.Path(), res.Name, err)
+	}
 }

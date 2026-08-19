@@ -88,7 +88,7 @@ scenarios:
     files: [test/local/idempotency_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E09
     desc: 版本升级——version 变更后重新实施
@@ -96,7 +96,7 @@ scenarios:
     files: [test/local/idempotency_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E10
     desc: 卸载——remove_scripts 逆序执行，环境干净
@@ -148,8 +148,8 @@ scenarios:
 
   - id: SC-E16
     desc: 状态记录与查询——哪个节点装了什么版本
-    env: [local]
-    files: [test/local/state_test.go]
+    env: [local, multinode]
+    files: [test/local/state_test.go, test/multinode/onerror_test.go]
     defects: [E4]
     phase: 1
     status: pending
@@ -364,7 +364,7 @@ scenarios:
     files: [test/local/idempotency_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   # ---------- SC-K Kubernetes ----------
   - id: SC-K01

@@ -29,9 +29,9 @@ import (
 // 归档内要装哪些文件由 files: 指定；留空则装归档里所有带可执行位的文件，
 // 这正好覆盖 containerd / docker 这类"一个 tar 包里若干个 bin"的形态。
 // 下载物不是归档时它自己就是那个可执行文件。
-func installBinary(res types.Resource, artifacts []types.DownloadResult) error {
+func installBinary(res types.Resource, artifacts []types.DownloadResult) ([]string, error) {
 	if len(artifacts) == 0 {
-		return fmt.Errorf("method: binary 需要 urls: 指明要安装的二进制或归档")
+		return nil, fmt.Errorf("method: binary 需要 urls: 指明要安装的二进制或归档")
 	}
 
 	dir := utils.InstallDir(res)
@@ -67,5 +67,5 @@ func installBinary(res types.Resource, artifacts []types.DownloadResult) error {
 		}
 	}
 
-	return runMethodScripts(res, cmds)
+	return cmds, nil
 }

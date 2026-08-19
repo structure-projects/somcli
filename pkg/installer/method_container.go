@@ -29,20 +29,20 @@ import (
 // 只拉镜像是不够的：用户写 method: container 装 helm，期望的是之后能直接敲 `helm`。
 // 包装脚本自己探测 docker / podman，所以 somcli 不需要在 Go 侧判断运行时 ——
 // 也就不会有"操作机装的是 docker、目标节点装的是 podman"这种判断错位。
-func installContainer(res types.Resource) error {
+func installContainer(res types.Resource) ([]string, error) {
 	image, err := utils.ParseStr(res.Image, res)
 	if err != nil {
-		return fmt.Errorf("image 模板解析失败 (%s): %w", res.Image, err)
+		return nil, fmt.Errorf("image 模板解析失败 (%s): %w", res.Image, err)
 	}
 	if image == "" {
-		return fmt.Errorf("method: container 需要 image: 指明镜像")
+		return nil, fmt.Errorf("method: container 需要 image: 指明镜像")
 	}
 	// 镜像名要被嵌进生成的脚本，带换行就能把脚本改成任意内容
 	if strings.ContainsAny(image, "\n\r") {
-		return fmt.Errorf("image 不能包含换行: %q", image)
+		return nil, fmt.Errorf("image 不能包含换行: %q", image)
 	}
 	if res.Name == "" {
-		return fmt.Errorf("method: container 需要 name: 作为命令名")
+		return nil, fmt.Errorf("method: container 需要 name: 作为命令名")
 	}
 
 	dir := utils.InstallDir(res)
@@ -67,7 +67,7 @@ func installContainer(res types.Resource) error {
 		fmt.Sprintf("chmod 0755 %s", shellQuote(wrapper)),
 	}
 
-	return runMethodScripts(res, cmds)
+	return cmds, nil
 }
 
 func containerPullCmd(image string) string {
