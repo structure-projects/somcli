@@ -28,14 +28,14 @@
 
 ```bash
 # 下载配置文件指定的所有资源
-somcli offline download -f <config-file>
+somcli download -f <config-file>
 
 # 静默模式（不显示下载详情）
-somcli offline download -f <config-file> -q
+somcli download -f <config-file> -q
 
 # 离线模式（仅检查文件是否已存在）
 export SOMCLI_OFFLINE=true
-somcli offline download -f <config-file>
+somcli download -f <config-file>
 ```
 
 ### **2.2 配置文件示例**
@@ -84,7 +84,7 @@ download:
 ### **3.1 成功下载**
 
 ```bash
-$ somcli offline download -f config.yaml
+$ somcli download -f config.yaml
 
 Download results:
   ✓ docker-20.10.12: docker/docker-20.10.12.tgz
@@ -96,7 +96,7 @@ Summary: 2/2 succeeded
 ### **3.2 部分失败**
 
 ```bash
-$ somcli offline download -f config.yaml
+$ somcli download -f config.yaml
 
 Download results:
   ✓ docker-20.10.12: docker/docker-20.10.12.tgz
@@ -109,7 +109,7 @@ Summary: 1/2 succeeded
 
 ```bash
 $ export SOMCLI_OFFLINE=true
-$ somcli offline download -f config.yaml
+$ somcli download -f config.yaml
 
 Download results:
   ✓ docker-20.10.12: docker/docker-20.10.12.tgz (cached)

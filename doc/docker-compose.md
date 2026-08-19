@@ -22,7 +22,7 @@ somcli docker-compose [command] [flags]
 somcli docker-compose install
 
 # 安装指定版本 (示例：v2.12.2)
-somcli docker-compose install --version v2.12.2
+somcli docker-compose install v2.12.2
 
 # 使用代理安装（国内加速）
 somcli docker-compose install --github-proxy "https://gh-proxy.com/"
@@ -70,7 +70,7 @@ somcli docker-compose -- config
 
 ```bash
 # 1. 安装指定版本
-somcli docker-compose install -v v2.12.2
+somcli docker-compose install v2.12.2
 
 # 2. 启动应用栈
 somcli docker-compose -f docker-compose.prod.yml up -d
@@ -118,7 +118,7 @@ docker_compose:
 3. **网络问题**：
    ```bash
    # 通过代理下载（企业内网环境）
-   somcli docker-compose install -p "http://internal-proxy:3128"
+   https_proxy="http://internal-proxy:3128" somcli docker-compose install
    ```
 
 ## 8. 常见问题

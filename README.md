@@ -50,7 +50,7 @@ somcli version
 
 ```bash
 # 1. 安装 Docker 环境
-somcli docker install -v 20.10.12
+somcli docker install --version 20.10.12
 
 # 2. 部署 Harbor 仓库
 somcli registry install -h harbor.example.com
@@ -67,7 +67,7 @@ somcli cluster create -f cluster.yaml
 
 ```bash
 # 安装指定版本
-somcli docker install -v 24.0.6
+somcli docker install --version 24.0.6
 
 # 容器管理
 somcli docker ps -a
@@ -97,11 +97,11 @@ somcli docker-compose logs -f
 
 ```bash
 # 批量操作
-somcli docker-images pull -s k8s
-somcli docker-images export -o images.tar.gz
+somcli images pull -s k8s
+somcli images export -o images.tar.gz
 
 # 仓库同步
-somcli docker-images push -r harbor.example.com
+somcli images push -r harbor.example.com
 ```
 
 ### Registry 管理
@@ -154,26 +154,23 @@ download:
 
 ```bash
 # 离线包操作
-somcli offline download -f offline.yaml
-somcli offline install -p ./doc/offline-packages
+somcli download -f offline.yaml
+somcli install -f offline.yaml --offline
 ```
 
 ### Swarm 管理
 
 ```bash
-# Swarm 集群初始化
-somcli swarm init --advertise-addr 192.168.1.100
-
-# 节点管理
-somcli swarm join --token [TOKEN] 192.168.1.100:2377
+# Swarm 集群创建（节点、advertise 地址等写在配置文件里）
+somcli cluster create --cluster-type swarm -f cluster.yaml
 ```
 
 ### Kubernetes 管理
 
 ```bash
 # K8s 集群操作
-somcli k8s install -f cluster.yaml
-somcli k8s get pods -A
+somcli cluster create --cluster-type k8s -f cluster.yaml
+somcli get pods -A
 ```
 
 ## 配置参考
@@ -272,10 +269,10 @@ somcli/
 
 ```bash
 # 静默安装
-somcli docker install --force
+somcli docker install -y
 
 # 彻底卸载
-somcli docker uninstall --force
+somcli docker uninstall -y
 ```
 
 ## 设计架构

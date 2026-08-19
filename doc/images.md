@@ -1,4 +1,4 @@
-# somcli docker-images 使用文档
+# somcli images 使用文档
 
 ## 1. 功能概述
 
@@ -10,7 +10,7 @@
 ## 2. 命令结构
 
 ```bash
-somcli docker-images [command] [flags]
+somcli images [command] [flags]
 ```
 
 ## 3. 核心命令
@@ -19,15 +19,15 @@ somcli docker-images [command] [flags]
 
 ```bash
 # 从默认仓库拉取所有镜像
-somcli docker-images pull
+somcli images pull
 
 # 从Harbor拉取指定镜像
-somcli docker-images pull \
+somcli images pull \
   --scope harbor \
   --registry harbor.example.com
 
 # 从自定义文件拉取
-somcli docker-images pull \
+somcli images pull \
   --file image-list.txt
 ```
 
@@ -44,11 +44,11 @@ registry.cn-beijing.aliyuncs.com/structured/structure-admin:1.0.2
 
 ```bash
 # 推送所有镜像到私有仓库
-somcli docker-images push \
+somcli images push \
   --registry harbor.example.com/project
 
 # 带认证的推送
-somcli docker-images push \
+somcli images push \
   --username admin \
   --password Harbor12345
 ```
@@ -57,11 +57,11 @@ somcli docker-images push \
 
 ```bash
 # 导出全部镜像到压缩包
-somcli docker-images export \
+somcli images export \
   --output /backup/images.tar.gz
 
 # 导出指定作用域镜像
-somcli docker-images export \
+somcli images export \
   --scope k8s \
   --output k8s-images.tar
 ```
@@ -70,7 +70,7 @@ somcli docker-images export \
 
 ```bash
 # 从压缩包导入镜像
-somcli docker-images import \
+somcli images import \
   --input /backup/images.tar.gz
 ```
 
@@ -98,16 +98,16 @@ somcli docker-images import \
 
 ```bash
 # 1. 从生产Harbor拉取镜像
-somcli docker-images pull \
+somcli images pull \
   -s harbor \
   -r harbor.prod.example.com
 
 # 2. 导出为离线包
-somcli docker-images export \
+somcli images export \
   -o /backup/prod-images-$(date +%Y%m%d).tar.gz
 
 # 3. 推送到测试环境
-somcli docker-images push \
+somcli images push \
   -r harbor.test.example.com/dev \
   -u tester -p Test@123
 ```
@@ -121,7 +121,7 @@ somcli --github-proxy "https://gh-proxy.com/" \
 
 # 同步特定架构镜像
 grep "linux/arm64" images.txt > arm64-images.txt
-somcli docker-images pull -f arm64-images.txt
+somcli images pull -f arm64-images.txt
 
 # 批量重打标签
 while read img; do
@@ -192,4 +192,4 @@ docker images | grep "^<none>" | awk '{print $3}' | xargs docker rmi
 
 ---
 
-通过 `somcli docker-images --help` 可查看实时帮助信息，建议结合 `--dry-run` 参数测试命令效果后再实际执行。
+通过 `somcli images --help` 可查看实时帮助信息，建议结合 `--dry-run` 参数测试命令效果后再实际执行。

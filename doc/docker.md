@@ -30,8 +30,8 @@ somcli docker install --yes
 # 卸载 Docker
 somcli docker uninstall
 
-# 强制卸载（不提示确认）
-somcli docker uninstall --force
+# 卸载并跳过确认提示
+somcli docker uninstall --yes
 ```
 
 ### 3.2 容器管理
@@ -75,9 +75,10 @@ somcli docker -- logs -f my_container
 
 | 参数        | 缩写 | 说明             |
 | ----------- | ---- | ---------------- |
-| `--version` | `-v` | 指定 Docker 版本 |
+| `--version` | -    | 指定 Docker 版本 |
 | `--yes`     | `-y` | 跳过确认提示     |
-| `--force`   | `-f` | 强制操作不提示   |
+| `--file`    | `-f` | 节点配置文件     |
+| `--node`    | -    | 目标节点 IP 列表 |
 | `--`        | -    | 透传命令分隔符   |
 
 ## 5. 使用示例
@@ -86,7 +87,7 @@ somcli docker -- logs -f my_container
 
 ```bash
 # 1. 安装 Docker
-somcli docker install -v 20.10.12
+somcli docker install --version 20.10.12
 
 # 2. 运行测试容器
 somcli docker -- run -d -p 80:80 --name webserver nginx
@@ -153,7 +154,7 @@ docker version
 ### Q2: 如何彻底卸载 Docker？
 
 ```bash
-somcli docker uninstall --force
+somcli docker uninstall --yes
 # 补充清理残留文件（Linux 示例）：
 sudo rm -rf /var/lib/docker
 ```
