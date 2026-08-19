@@ -1,3 +1,4 @@
+
 resources:
   - name: "kubectl"
     method: "binary"
@@ -16,7 +17,6 @@ resources:
       - "127.0.0.1"
   - name: "jq"
     method: "package"
-    package: "jq"
     hosts:
       - "127.0.0.1"
 nodes:

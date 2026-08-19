@@ -1,18 +1,17 @@
+# Swarm 集群示例。cluster: 是列表，一份文件可以同时描述多套集群，
+# 用 --cluster-name / --cluster-type 选中要操作的那一套。
 cluster:
-  type: "swarm"
-  name: "my-swarm"
-  nodes:
-    - host: "swarm-mgr-01"
-      ip: "192.168.1.100"
-      role: "manager"
-      sshKey: "~/.ssh/id_rsa"
-
-  swarmConfig:
-    advertiseAddr: "192.168.1.100" # 管理节点广播地址
-    listenAddr: "0.0.0.0:2377" # 监听地址
-    defaultAddrPool: # 地址池配置
-      - "10.20.0.0/16"
-    subnetSize: 24 # 子网大小
-    dataPathPort: 4789 # 数据通道端口
-
-###u7dfrdta
+  - type: "swarm"
+    name: "my-swarm"
+    nodes:
+      - host: "swarm-mgr-01"
+        ip: "192.168.1.100"
+        role: "manager"
+        sshKey: "~/.ssh/id_rsa"
+    swarmConfig:
+      advertiseAddr: "192.168.1.100" # 管理节点广播地址
+      listenAddr: "0.0.0.0:2377" # 监听地址
+      defaultAddrPool: # 地址池配置
+        - "10.20.0.0/16"
+      subnetSize: 24 # 子网大小
+      dataPathPort: 4789 # 数据通道端口

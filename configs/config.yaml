@@ -103,32 +103,25 @@ nodes:
     ip: "127.0.0.1"
     role: "manager"
     sshKey: "~/.ssh/id_rsa"
+# 以下两段演示"一份配置覆盖所有场景"：install/download 只读 resources，
+# cluster create 只读 cluster，images 命令只读 images —— 各取所需，互不干扰。
 cluster:
-  -  name: "my-swarm"
-     type: "swarm"
-     master:
-      - host: "swarm-mgr-01"
-     worker:
-      - host: "swarm-mgr-01"
-     swarmConfig:
-      advertiseAddr: "192.168.1.100" # 管理节点广播地址
-      listenAddr: "0.0.0.0:2377" # 监听地址
-      defaultAddrPool: # 地址池配置
-        - "10.20.0.0/16"
-      subnetSize: 24 # 子网大小
-      dataPathPort: 4789 # 数据通道端口
-  -  name: "my-k8s"
-     type: "k8s"
-     master:
-      - host: "swarm-k8s-01"
-     worker:
-      - host: "swarm-k8s-01"
-     k8sConfig:
-      version: "1.25.0" # Kubernetes版本
-      podNetworkCidr: "10.244.0.0/16" # Pod网络CIDR
-      serviceCidr: "10.96.0.0/12" # Service网络CIDR
-      runtime: docker/co # 容器运行时时docker 或容器 1.24 以上和以下执行过程略有区别
-      resources:
-        - kubernetes
-        - 
+  - type: "k8s"
+    name: "my-k8s"
+    nodes:
+      - host: "tools"
+        ip: "127.0.0.1"
+        role: "master"
+        sshKey: "~/.ssh/id_rsa"
+    k8sConfig:
+      version: "1.28.2"
+      podNetworkCidr: "10.244.0.0/16"
+      serviceCidr: "10.96.0.0/12"
+      containerRuntime: "docker"
+      imageRepository: "registry.aliyuncs.com/google_containers"
+
 images:
+  - name: "nginx"
+    tag: "1.25"
+  - name: "busybox"
+    tag: "1.36"
