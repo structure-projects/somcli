@@ -16,6 +16,10 @@
 - [ ] F3：绝对路径 `target` 时 `LocalPath` 不再无条件 `filepath.Join(cacheDir, ...)`（SC-D05）
 - [ ] F6：`CopyToRemote` 展开 `~`，与 `RunCommandOnNode` 行为一致（SC-F03）
 - [ ] F5：下载器改 `net/http` 主实现，wget/curl 仅作降级（SC-D11）
+      优先级最高的一条：`pkg/utils/download.go:151` 写死 exec wget，于是"装工具的工具"
+      要求 wget 先装好 —— 没有 wget 的机器上 somcli 连 wget 都装不了。改完顺带让
+      SC-D01/D03/D04 在 macOS 与开发机上也能跑（M0 里那两处只能 `t.Skip`），
+      并解开 SC-E13 结转过来的 URL / target 两处模板上下文断言
 - [ ] 下载器补齐：checksum 不符即删残留（SC-D02）、代理只对 github.com 生效（SC-D07）、离线命中（SC-D08）、离线缺失明确报错（SC-D09）、远程同 hash 跳过传输（SC-D10）
 - [ ] F12 相关的离线开关一致性：`SOMCLI_OFFLINE` 与 `--offline`（SC-X03）
 - [ ] 黑盒用例齐备并把上述场景置 done

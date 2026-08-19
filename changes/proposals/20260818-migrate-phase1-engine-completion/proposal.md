@@ -36,9 +36,26 @@
 | D7 | `loadNodesFromFile` 空壳 —— docker 子系统多节点能力 100% 不可用 |
 | D8/F13 | compose 安装器报告成功但从不安装；资源名拼错 `docker-comopose`；忽略入参版本；硬编码 `x86_64`；`{{}}` 非法模板 |
 | F3 | 绝对路径 `target` 的 `LocalPath` 算错（`filepath.Join(cacheDir, targetPath)` 无条件拼接，M0 未动） |
-| F5 | 下载器 shell out 到 `wget`，无 curl 回退、未用 `net/http` |
+| F5 | 下载器 shell out 到 `wget`，无 curl 回退、未用 `net/http` —— **自举矛盾，见下** |
 | F6 | `CopyToRemote` 不展开 `~`，与 `RunCommandOnNode` 行为不一致 |
 | F14 | images `pull`/`push`/`import` 单张失败一律 `continue` 且整体不返回错误 |
+
+### F5 为什么是高优先级：一个装工具的工具，不该要求工具已经装好
+
+`pkg/utils/download.go:151` 是唯一的下载路径，写死 `exec.CommandContext(ctx, "wget", ...)`，
+没有 curl 回退也没走 `net/http`。somcli 的定位是**环境初始化与工具编排引擎** ——
+它面对的典型输入就是一台刚开机、什么都没有的机器。而在那台机器上，somcli 第一件事是
+去 exec 一个本该由它自己负责安装的工具：
+
+- 没有 wget 的机器（macOS 默认环境、精简过的容器基础镜像、部分最小化安装的发行版）上，
+  somcli 装不了任何东西，**包括装不了 wget 本身**；
+- somcli 交付形态是单个静态 Go 二进制，本来"拷过去就能跑"是它最大的优势，
+  却因为这一行 exec 退化成"拷过去还得先手动装个 wget"；
+- M0 的 SC-D01/D03/D04 因此只能在带 wget 的 Linux 操作机上跑，macOS 那格只能 `t.Skip` ——
+  缺陷直接削掉了验证覆盖面。
+
+改用 `net/http`（标准库，无新增依赖）后：零外部依赖、跨平台一致、重试与 checksum 校验
+都在进程内可控可测，上面三条一并消解。wget/curl 只在需要走系统代理配置等特殊场景下作为降级。
 
 ## 目标状态
 
