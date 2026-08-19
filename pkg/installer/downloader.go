@@ -22,22 +22,15 @@ import (
 
 	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
-	"gopkg.in/yaml.v2"
 )
 
-// LoadDownloadConfig 加载下载配置文件
+// LoadDownloadConfig 加载下载配置文件。
+//
+// 直接委托 utils.LoadConfig：否则 download 与 install 读同一份文件会得到不同结果 ——
+// 配置里的 offline / workdir / mirrors_source 只在 install 那条路径上生效。
+// 统一配置的前提是"哪条命令读都一样"。
 func LoadDownloadConfig(configPath string) (*types.ResourceConfig, error) {
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
-	}
-
-	var config types.ResourceConfig
-	if err := yaml.UnmarshalStrict(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	return &config, nil
+	return utils.LoadConfig(configPath)
 }
 
 // DownloadSingleFile 下载单个文件
