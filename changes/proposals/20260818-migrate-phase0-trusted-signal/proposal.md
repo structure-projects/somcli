@@ -7,11 +7,12 @@
 | 类型 | migration |
 | 创建日期 | 2026-08-18 |
 | 创建人 | chuck |
-| 状态 | coding |
+| 状态 | review |
 | 优先级 | high |
 | 总纲 | `changes/proposals/20260818-migrate-arch-convergence/proposal.md` |
 | 技术附录 | `doc/提案-架构收敛与测试体系.md` §4（缺陷基线）、§5.2 Phase 0 |
-| 场景 | 22 个（`test/matrix.yaml` 中 `phase: 0`），当前 3 done / 19 pending |
+| 场景 | 22 个（`test/matrix.yaml` 中 `phase: 0`），当前 15 done / 7 pending（余 7 条载体在 CI） |
+| 评审 | `review.md`（⚠️ 有条件通过，2 MUST / 5 SHOULD 已全部处理） |
 
 > 本里程碑是所有后续工作的前置。在 `RunScripts` 吞错与 `SetNode` 断链修好之前，
 > 任何"验证通过"都不可信 —— 失败也会打印 `✓ 成功`，连人工判断都不可靠。
@@ -73,26 +74,38 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 新增只读入口 `somcli validate -f`：走 install 完全相同的加载与渲染路径但一步动作都不做，
 用于在动手装之前回答"配置写对了吗"。它同时是 SC-X05 的判据载体 —— 上面 D12 与 G9 都是它一跑就现形的。
 
+### 评审阶段补记（见 `review.md`）
+
+评审对照本提案逐维度过了一遍，结论是有条件通过。两项 MUST 都已修，其中一项是**本提案自己引入的回归**，
+值得单独记账 —— 它说明"把静默忽略改成报错"这件事本身也会不小心写出新的静默忽略：
+
+| 编号 | 位置 | 问题 | 处置 |
+|---|---|---|---|
+| D14 | `pkg/images/utils.go` | M0.7 重写 `loadCustomImageList` 的纯文本分支时改用了 `strings.Cut(line, ":")`，切的是**第一个**冒号：`registry:5000/nginx:latest` 得到 `name=registry` / `tag=5000/nginx:latest`，然后拿这个错名字去 pull。旧代码用 `strings.Split` + `len(parts) != 2` 会警告并跳过 —— 即改动前是"拒绝并告知"，改动后变成"静默取错值"，与本提案的主张正好相反。 | 已修：抽 `splitNameTag`，切最后一个冒号，最后一段含 `/` 则判为无 tag |
+| 流程 | `.github/workflows/*` | `ci.yml` 与 `integration.yml` 都只在 push / PR 到 `master`、`develop` 时触发，feat 分支推上去不跑任何 job，`ci.yml` 连 `workflow_dispatch` 都没有。而本提案要求"归档在推送前完成"且"矩阵全绿" —— 拿绿信号必须先开 PR，开 PR 必须先推送，推送前必须先归档，归档前必须先绿。 | 已解（用户定论"改触发条件"）：两个 workflow 的 `push.branches` 加 `feat-*` / `fix-*`，`ci.yml` 补 `workflow_dispatch` |
+
+5 项 SHOULD 全修，无搁置：`LoadDownloadConfig` 改为委托 `utils.LoadConfig`（此前 `download -f`
+不应用全局设置，同一份文件 install 认、download 不认，正是 M0.7 要消灭的差异）；
+`cluster.LoadConfig` 覆盖节点表补注释说明这是有意取舍；SC-X09 的 desc 收窄到用例真断言的三条命令，
+`images --custom-file` 那半条另立 SC-X10 挂到 M4（需 docker）；`applyGlobalSettings` 注释改为与实现一致；
+`cmd/validate.go` 的 `MarkFlagRequired` 补 `_ =`。
+
+SC-X09 那条尤其值得记：矩阵是人工维护的唯一事实来源，一条 `done` 里夹着未断言的承诺，
+就等于让矩阵重新变成"自己说自己通过了"的东西 —— 正是本里程碑要消灭的。
+
 
 ### 本里程碑剩余范围
 
-| 场景 | 缺什么 |
-|---|---|
-| SC-E01 本机安装单个资源 | `test/local/engine_test.go` 未建 |
-| SC-E02 多资源按数组顺序 | 同上（顺序靠脚本按序追加同一文件来观察） |
-| SC-E07 `install -n` 按名安装 | 同上（断言只有被点名的资源产生副作用） |
-| SC-E03 单个远程节点安装 | `test/remote/dispatch_test.go` 未建（需 CI 内 SSH 自连接） |
-| SC-E04/E05/E06 多远程节点 / `hosts` 定向 / 混合编排 | `test/multinode/` 与 3 节点 sshd fixtures 未建 |
-| SC-E13 模板变量三处上下文一致 | `test/local/template_test.go` 未建 |
-| SC-F01 `hosts` 引用未声明主机 | `test/local/node_resolve_test.go` 未建 |
-| SC-F02 SSH 不可达报错含节点/用户/IP | `test/local/failure_test.go` 未建 |
-| SC-F04 `pre_install` 失败则中止 | 同上 |
-| SC-F06 模板引用不存在变量则报错 | `test/local/template_test.go` 未建 |
-| SC-F07 未知字段拒绝 | `test/local/config_test.go` 未建（黑盒版） |
-| SC-D01/D03/D04 下载与 target 路径 | `test/local/download_test.go` 未建（用本地 HTTP 服务当源，不依赖外网） |
-| SC-X01 `--workdir` 改变全部派生目录 | `test/local/workdir_test.go` 未建 |
-| SC-X04 文档中命令与标志真实存在 | `test/local/doc_commands_test.go` 未建 |
-| — | `.github/workflows/integration.yml`（remote/multinode 载体）未建 |
+代码与用例已全部写完，剩下的只有"拿到 CI 的绿信号"这一步 —— 7 个场景的载体不在开发机上：
+
+| 场景 | 载体 | 为什么本机验不了 |
+|---|---|---|
+| SC-E03 单个远程节点安装 | `test/remote/dispatch_test.go`（tag `remote`） | 需要一个能连的 SSH 目标；开发机通常没开 sshd，macOS 还得先给 lo0 加回环别名 |
+| SC-E04/E05/E06 多远程节点 / `hosts` 定向 / 混合编排 | `test/multinode/`（tag `multinode`）+ 3 节点 sshd 容器 | 需要 docker；本机 `docker` 命令不存在 |
+| SC-D01/D03/D04 下载与 target 路径 | `test/local/download_test.go` | 下载器 shell out 到 `wget`，无 curl 回退也未用 `net/http`（F5）；本机无 wget，用例显式 `t.Skip` 并说明原因 |
+
+`test/matrix.yaml` 里这 7 条一律留 `pending`。**MUST NOT 在拿到绿信号前先置 `done`** ——
+那会让矩阵重新变成"自己说自己通过了"的东西，正是本里程碑要消灭的。
 
 其中 **SC-E05 的负向断言是 D1 的终极回归**：断言文件出现在目标节点、且**不出现在运行 somcli 的操作机**上，直接封死"误装在操作机"复现的可能。
 
@@ -169,11 +182,12 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 
 | 维度 | 说明 |
 |---|---|
-| CLI | 命令与标志无删除、无重命名；若待决事项 6 通过，新增只读命令 `validate`（纯新增，不影响既有路径） |
+| CLI | 命令与标志无删除、无重命名；新增只读命令 `validate`，新增 `install -n`、`cluster create/remove --cluster-name`、`cluster remove --cluster-type`（纯新增，不影响既有路径）；`--source` 由 bool 改为字符串列表，此前它的 bool 语义本就与帮助文本不符且从未真正工作 |
 | 配置 | **BREAKING**：未知键从静默忽略改为报错。受影响的 9 类键见技术附录 §2.3，changelog 逐条列出 |
+| 配置 | **BREAKING**：`cluster:` 由映射改为列表，所有现存集群配置需改写（迁移写法见 changelog） |
 | 行为 | **BREAKING**：失败退出码从 0 变为非 0，调用方脚本/CI 可见行为变化 |
 | `--help` | 从"可能触发安装"变为纯只读，属安全性修正 |
-| 已知欠账 | `configs/config.yaml`、`configs/kubernetes-cluster.yaml`、`configs/tools.yaml` 三个示例在严格解析下仍不合法，M1（`package` 能力）与 M4（schema 归一）解决；本里程碑在文档中标注它们为"设计稿，暂不可直接运行" |
+| 已知欠账 | 见 changelog「已知欠账」段：wget 硬依赖（F5）、`method` 等未消费字段（G9）、透传命令的全局 flag 不生效（D10 后半）、`StrictHostKeyChecking=no` |
 
 ## 双规范并存期约定
 
@@ -183,24 +197,28 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 
 ## 影响范围
 
-- **代码**：`pkg/utils/{command,utils}.go`、`pkg/cluster/common.go`、`pkg/installer/downloader.go`、`cmd/{compose,install}.go`；若待决事项 6 通过，新增 `cmd/validate.go`
-- **配置**：`configs/**`（示例修正，配合严格解析）
+- **代码**：`pkg/utils/{command,utils,ssh}.go`、`pkg/cluster/common.go`、`pkg/installer/{downloader,installer}.go`、`pkg/images/utils.go`、`pkg/types/{resource,cluster}.go`、`cmd/{compose,install,cluster,root}.go`；新增 `cmd/validate.go`
+- **配置**：`configs/**`（示例修正，配合严格解析与统一 schema）
 - **测试**：删除 `test/unit/`、`test/coverage_matrix_test.go`、`test/contract/config_test.go`；`test/contract/` → `test/local/`；新增 `test/local/*`、`test/remote/*`、`test/multinode/*`、`test/fixtures/multinode/`；更新 `test/matrix.yaml`
-- **CI**：`.github/workflows/ci.yml`（去覆盖率门槛、加 `test/` 不得 import `pkg/` 的 grep 守卫）、`integration.yml`（新增）、删除 `test.yml`
+- **CI**：`.github/workflows/ci.yml`（去覆盖率门槛、加 `test/` 不得 import `pkg/` 的 grep 守卫、`feat-*` 触发 + `workflow_dispatch`）、`integration.yml`（新增）、删除 `test.yml`
 - **文档**：`README.md` 与 `doc/*.md` 中的命令名/标志修正（仅为通过 SC-X04，不做结构重建）
+- **变更记录**：`changes/changelog/0.2.0-alpha.md`（三项 BREAKING 单列）
 
 ## 验收标准
 
 - [ ] `test/matrix.yaml` 中 22 个 `phase: 0` 场景全部 `status: done`，每条 `files` 指向的用例真实存在
-- [ ] `test/` 下无任何 `github.com/structure-projects/somcli` import（CI 守卫生效）
-- [ ] `ci.yml` 中不存在 `MIN_COVERAGE` / `-coverpkg`
-- [ ] `gofmt -l .` 为空；`go vet ./...` 干净
-- [ ] SC-E05 负向断言通过：目标节点有文件、操作机无文件（D1 不可能复现）
-- [ ] 任意失败路径退出码非 0 且输出无 `[SUCCESS]`（D2/F4/G8 不可能复现）
-- [ ] `somcli <任意命令> --help` 前后文件树快照一致（D9）
-- [ ] 文档中出现的每条命令与标志，在二进制上 `--help` 可验证存在（SC-X04）
-- [ ] 每条新增用例都已在缺陷未修版本上确认会失败
-- [ ] changelog 已补条目，两项 BREAKING 单列
+      （15 done / 7 pending：SC-E03/E04/E05/E06 与 SC-D01/D03/D04 的载体只在 CI，
+      待 `integration.yml` 与 Linux 上的 local 组跑绿后置 done —— **MUST NOT 在拿到绿信号前先勾**）
+- [x] `test/` 下无任何 `github.com/structure-projects/somcli` import（CI 守卫生效）
+- [x] `ci.yml` 中不存在 `MIN_COVERAGE` / `-coverpkg`
+- [x] `gofmt -l .` 为空；`go vet ./...` 干净
+- [ ] SC-E05 负向断言通过：目标节点有文件、操作机无文件（D1 不可能复现）（用例已写，待 CI）
+- [x] 任意失败路径退出码非 0 且输出无 `[SUCCESS]`（D2/F4/G8 不可能复现）
+- [x] `somcli <任意命令> --help` 前后文件树快照一致（D9）
+- [x] 文档中出现的每条命令与标志，在二进制上 `--help` 可验证存在（SC-X04）
+- [x] 每条新增用例都已在缺陷未修版本上确认会失败（`48530cc` 上 20 个用例转红）
+- [x] changelog 已补条目，三项 BREAKING 单列
+- [x] 已过评审，MUST fix 全修（见 `review.md` 与「评审阶段补记」）
 
 ## 任务清单
 

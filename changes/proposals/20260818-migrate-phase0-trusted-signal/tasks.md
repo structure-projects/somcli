@@ -102,7 +102,7 @@
 - [x] 8 个示例配置全部改到新 schema 并经 `validate` 通过；`configs/config.yaml` 同时含四段作为"一份配置覆盖所有场景"的样例
 - [x] `configs/kubernetes-cluster.yaml` 由 5 个 YAML 文档（后 4 段被静默丢弃）合成单文档
 - [x] `validate` 拒绝多文档文件，明说 `---` 之后的内容不会生效
-- [ ] changelog 第三项 BREAKING：`cluster:` 映射 → 列表
+- [x] changelog 第三项 BREAKING：`cluster:` 映射 → 列表
 
 ## M0.4 remote 组（SC-E03）
 
@@ -128,6 +128,9 @@
 - [x] `.github/workflows/integration.yml`：`remote` 与 `multinode` 两个 job，失败时收集容器日志
 - [x] 确认 `go test ./...` 默认仍为秒级（build tag 隔离生效）：实测 34s，全部耗时在 local 组的真实等待上
 - [x] 修掉 `ci.yml` 里恒红的 import 守卫（原先裸匹配包名，连注释都判违规）
+- [x] 两个 workflow 的 `push.branches` 加 `feat-*` / `fix-*`，`ci.yml` 补 `workflow_dispatch`
+      （评审 MUST-1：原先只在 master/develop 上触发，feat 分支推上去不跑任何 job，
+      而"归档在推送前"又要求先拿到绿信号 —— 构成死锁。用户定论走"改触发条件"）
 - [ ] 确认 `ci.yml` 三操作机矩阵（ubuntu / ubuntu-arm / macos）上 local 组全绿
 
 ## 测试
@@ -140,13 +143,28 @@
 
 ## 评审
 
-- [ ] 通过 expert-review（产出 `review.md`）
-- [ ] 修复所有 MUST fix 项
-- [ ] SHOULD fix 项已评估（不修复需说明理由）
+- [x] 通过 expert-review（产出 `review.md`）—— 结论 ⚠️ 有条件通过，2 MUST / 5 SHOULD / 3 NIT
+- [x] 修复所有 MUST fix 项
+      - MUST-1 流水线在 feat 分支上无法触发 → 改触发条件（见 M0.6）
+      - MUST-2 `loadCustomImageList` 纯文本分支把 tag 切在第一个冒号，
+        `registry:5000/nginx:latest` 会静默产出 `name=registry` 去 pull。
+        旧代码是"警告并跳过"，本次改动把它变成了"静默取错值" → 抽 `splitNameTag`
+        改切最后一个冒号，最后一段含 `/` 判为无 tag
+- [x] SHOULD fix 项已评估（5 项全修，无搁置项）
+      - `installer.LoadDownloadConfig` 直接委托 `utils.LoadConfig`：此前 `download -f` 不应用
+        全局设置，同一份文件 install 认、download 不认，正是 M0.7 要消灭的差异
+      - `cluster.LoadConfig` 覆盖节点表补注释说明取舍（有意，非疏漏）
+      - SC-X09 的 desc 收窄到用例真断言的三条命令，`images --custom-file` 那半条
+        另立 SC-X10（需 docker，挂 M4）
+      - `applyGlobalSettings` 注释改为与实现一致（挡住它的不只是命令行标志）
+      - `cmd/validate.go` 的 `MarkFlagRequired` 补 `_ =`
+- [x] NIT 已评估：`isHelpRequest` 对同名全局 flag 的取舍、`countDocuments` 数空尾文档
+      两项不改（影响面极小且行为正确）；`cmd/docker.go` 的 `loadNodesFromFile`
+      属老代码"写好没接线"，与 D1 同源，记入 M1 不在本里程碑动
 
 ## 归档（MUST 在推送前完成）
 
-- [ ] `changes/changelog/<version>.md` 补条目，两项 BREAKING（严格解析、退出码语义）单列
+- [x] `changes/changelog/0.2.0-alpha.md` 补条目，三项 BREAKING 单列（严格解析、退出码语义、`cluster:` 列表化）
 - [ ] `git mv changes/proposals/20260818-migrate-phase0-trusted-signal/ changes/archive/`
 - [ ] `changes/config.yaml` 的 `current-proposal` 切到 `20260818-migrate-phase1-engine-completion`
 
