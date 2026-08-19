@@ -11,7 +11,7 @@
 - [x] 立验收清单：`test/matrix.yaml` 82 场景（`env` 分组：local / remote / multinode / cluster / matrix）
 - [x] 阅读 `proposal.md` 与技术附录 `doc/提案-架构收敛与测试体系.md` §4 / §5.2
 - [x] 切 `feat-arch-convergence` 分支（commit-msg hook 禁止在 master/develop 直接提交）
-- [ ] 定论待决事项 6：是否新增 `somcli validate -f <file>` 只读校验命令
+- [x] 定论待决事项 6：新增 `somcli validate -f <file>` 只读校验命令（用户定论）
 
 ## 已完成的代码修复（工作区未提交，待落库）
 
@@ -74,14 +74,35 @@
       → `status` 留 `pending`，待 Linux CI 实跑确认后再置 done
 - [x] `workdir_test.go` SC-X01：两次不同 `--workdir` → 产物各自隔离；仓库目录无 `somwork` 新增（快照对比）
       判据取"本次运行前后仓库侧无变化"而非"somwork 不存在"，否则开发机上遗留的 somwork 会误报
-- [ ] `config_test.go` SC-X05：`configs/` 下每个示例经二进制校验（依赖待决事项 6 的结论）
+- [x] `config_test.go` SC-X05：`configs/` 下每个示例经 `somcli validate -f` 校验 —— 断言退出码 0，且
+      `validate` 声称只读则 workdir 前后快照必须一致；配套 `SC-X05_ValidateRejectsBrokenConfig`
+      正向确认坏配置会被拒（未知键 / 模板变量不存在）
+      （用例逼出 D12 `--source` 类型错、G9 一批从未消费的字段与 5 文档静默丢弃）
 - [x] `config_test.go` SC-F07：未知字段 / 拼错键 / 重复键三类 → 均退出码非 0，错误指出键名
 - [x] `config_test.go` SC-X07（新增场景）D9 回归：对 26 条叶子命令跑 `--help`，workdir 与 HOME 前后快照一致、退出码 0
       （用例逼出 D10：全局 flag 在 `--help` 之前时 `args[0]` 不是 `--help`，帮助拦截失效 → `isHelpRequest` 改为先跳过 root 的全局 flag）
-- [ ] `doc_commands_test.go` SC-X04：抽 `README.md` + `doc/*.md` 的 ```bash 块中 `somcli ...` 调用 → 对二进制执行 `<cmd> --help` 断言退出码 0；标志断言出现在 `--help` 输出中
-- [ ] 修文档中不存在的命令与标志（G4/G5，仅改名不改结构）：`docker-images`→`images`、`offline download`→`download`、`cluster deploy`→`cluster create`、`registry install -h`→`-H`；删除未注册的 `docker uninstall --force` / `apply -f` / `images --username|--password` / compose `-v|-p`
+- [x] `doc_commands_test.go` SC-X04：抽 `README.md` + `doc/*.md` 的 ```bash 块中 `somcli ...` 调用 → 对二进制执行 `<cmd> --help` 断言退出码 0；标志断言出现在 `--help` 输出中
+- [x] 修文档中不存在的命令与标志（G4/G5，仅改名不改结构）：`docker-images`→`images`、`offline download`→`download`、`cluster deploy`→`cluster create`、`registry install -h`→`-H`；删除未注册的 `docker uninstall --force` / `apply -f` / `images --username|--password` / compose `-v|-p`
 - [x] 每条用例在缺陷未修版本上确认会失败：`git worktree` 检出 `48530cc`（全部 fix 之前）+ 覆盖当前
       `test/local/*.go` → 20 个用例转红，且红的正是各自负责回归的缺陷
+
+## M0.7 统一配置 schema（BREAKING，用户定论"一份配置所有场景都能加载"）
+
+原先每类命令各认一套 schema：`install -f` 读 `resources:`，`cluster create -f` 读的是另一套
+以 `cluster:` 为根的映射，`images --custom-file` 又是第三种。同一份文件换个场景必然解析失败
+（严格解析之后更是直接报未知键）。改为单一 `types.ResourceConfig`：全局设置 + `resources` +
+`nodes` + `cluster` + `images` 共存，各命令只取自己那一段，别人的段落原样放着不影响解析。
+
+- [x] `types.ResourceConfig` 纳入 `Clusters []ClusterSpec` 与 `Images []Image`
+- [x] `cluster:` 由映射改为**列表**（用户定论）：一份文件可同时描述 my-swarm 与 my-k8s
+- [x] 拆出 `types.ClusterSpec`，`ClusterConfig` 保留为"已选定的那一套"（存量 `config.Cluster.X` 访问不变）
+- [x] `cluster.LoadConfig(file, name, type)` 按 name → type → 唯一匹配 依次判定，定不下来就报错并列出候选，不默默取第一套
+- [x] `cluster create/remove` 增 `--cluster-name`，`remove` 补 `--cluster-type`
+- [x] `images --custom-file` 兼容三种输入：统一配置的 `images:` 段 / 裸列表 / 纯文本 `name:tag` 行
+- [x] 8 个示例配置全部改到新 schema 并经 `validate` 通过；`configs/config.yaml` 同时含四段作为"一份配置覆盖所有场景"的样例
+- [x] `configs/kubernetes-cluster.yaml` 由 5 个 YAML 文档（后 4 段被静默丢弃）合成单文档
+- [x] `validate` 拒绝多文档文件，明说 `---` 之后的内容不会生效
+- [ ] changelog 第三项 BREAKING：`cluster:` 映射 → 列表
 
 ## M0.4 remote 组（SC-E03）
 

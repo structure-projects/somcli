@@ -59,13 +59,18 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 
 ### 写黑盒用例时新发现的缺陷
 
-写用例的价值不止于防回归 —— 下面两项是补 M0.3 用例时被用例本身逼出来的，
-静态阅读代码看不出来（都属于「代码写好了但没接线」这一类，与 D1 同源）。
+写用例的价值不止于防回归 —— 下面几项是补 M0.3 用例时被用例本身逼出来的，
+静态阅读代码看不出来（多属于「代码写好了但没接线」这一类，与 D1 同源）。
 
 | 编号 | 位置 | 问题 | 处置 |
 |---|---|---|---|
 | D10 | `cmd/compose.go` | 透传用的 `DisableFlagParsing` 让 cobra 连 somcli 自己的全局 flag 都不解析：`somcli --workdir X docker-compose up` 既丢了 `--workdir`（产物落回 `./somwork`），又把 `--workdir X` 当成 compose 的参数透传下去。**同一根因让 D9 的修复漏了一半** —— `args[0]` 是 `--workdir` 而不是 `--help`，帮助拦截失效，实测 `somcli --workdir /tmp/x docker-compose --help` 仍然去下载安装。 | 帮助拦截这一半在本里程碑修（跳过头部的全局 flag 再判断，`isHelpRequest` 接收 root 的 `PersistentFlags`）；全局 flag 真正生效这一半需要重排透传命令的解析时机，记为 SC-X08 留给 M1 |
 | D11 | `cmd/install.go` | `installer.InstallTool(file, name, quiet)` 早已实现，但 `-n/--name` 从未注册 → 按名安装（SC-E07）整条路径不可达，`somcli install -f cfg -n b` 报 `unknown shorthand flag: 'n'`。 | 已修：注册 `-n/--name` 并接上 `InstallTool` |
+| D12 | `cmd/root.go` | `--source` 帮助写着 "comma-separated or multiple flags"，类型却是 `BoolVar`。绑到 viper 的 `mirrors_source` 后 `GetStringSlice` 读回 `["false"]`：每条命令都白跑一次 `InitSource` 并打印 `加载源 -> [false]`，**且把配置文件里真正的 `mirrors_source` 盖掉**。 | 已修：改 `StringSliceVar`，并在 `len(sourceList) > 0` 时才 `InitSource` |
+| G9 | `configs/*.yaml`、`cmd/install.go` | 示例配置与帮助描述了一批从未被消费的字段/能力：资源级 `method`（`install --help` 声称支持 package/binary/source/container 四种安装方式，实际只有 download→scripts 一条路径）、`res_type`、`files`、`extra_files`、资源级 `roles`，以及 `configs/tools.yaml` 里的 `package:`；`configs/kubernetes-cluster.yaml` 更是写了 5 个 YAML 文档而加载器只读第一个，后 4 段被静默丢弃。 | 本里程碑：示例配置按当前 schema 重写、`install --help` 改为陈述真实流程并明说 `method` 未消费、`validate` 兜住回归；`method` 真正分发留给 M1 |
+
+新增只读入口 `somcli validate -f`：走 install 完全相同的加载与渲染路径但一步动作都不做，
+用于在动手装之前回答"配置写对了吗"。它同时是 SC-X05 的判据载体 —— 上面 D12 与 G9 都是它一跑就现形的。
 
 
 ### 本里程碑剩余范围
