@@ -321,7 +321,9 @@ func LoadConfig(path string) (*types.ResourceConfig, error) {
 	return &Config, nil
 }
 
-// applyGlobalSettings 让配置文件里的全局设置真正生效。命令行标志已显式设置的不覆盖。
+// applyGlobalSettings 让配置文件里的全局设置真正生效。
+// 优先级：命令行标志 > ~/.somcli.yaml > 这里的资源配置。判据是 viper 里已有非空值就不动，
+// 所以挡住它的不只是显式传的标志，全局配置文件里的同名项也会挡住。
 func applyGlobalSettings(cfg *types.ResourceConfig) {
 	if cfg.Offline {
 		SetOffline(true)

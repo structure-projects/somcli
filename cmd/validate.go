@@ -47,7 +47,7 @@ Exit code is non-zero if the config would fail at install time.`,
 func init() {
 	rootCmd.AddCommand(validateCmd)
 	validateCmd.Flags().StringVarP(&validateConfigFile, "file", "f", "", "Config file to validate (required)")
-	validateCmd.MarkFlagRequired("file")
+	_ = validateCmd.MarkFlagRequired("file")
 }
 
 func runValidate(cmd *cobra.Command, args []string) {

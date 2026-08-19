@@ -45,6 +45,11 @@ func LoadConfig(configFile, name, clusterType string) (*types.ClusterConfig, err
 
 	// 把节点登记进全局节点表。缺了这一步，utils.GetNode 查不到任何主机，
 	// 声明为远程的安装会被解析失败或误当作本机执行。
+	//
+	// 这里是覆盖而非合并：utils.LoadConfig 已把顶层 nodes: 写进全局节点表，
+	// 被选中集群的 nodes 会整体替换掉它。集群操作只该看见这套集群自己的机器，
+	// 免得 hosts 误命中另一套集群的节点。代价是同一份文件里顶层 nodes: 在
+	// 集群路径上不可见 —— cluster 流程不消费 resources，暂时踩不到。
 	utils.SetNode(spec.Nodes)
 
 	return &types.ClusterConfig{Cluster: *spec}, nil
