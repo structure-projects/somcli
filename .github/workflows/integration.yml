@@ -1,0 +1,86 @@
+# 需要真实 SSH 环境的功能验证。
+#
+# 这两组用 build tag 隔离（remote / multinode），默认 `go test ./...` 不跑 ——
+# 开发机通常没开 sshd、也不一定有 docker。所以它们的载体只有这条流水线，
+# 一旦这里不跑，test/remote 与 test/multinode 就等于不存在。
+#
+# 两组都在 CI 里硬失败而非跳过：GitHub 自动设了 CI=true，用例据此判定
+# "连不上不是环境不具备，而是下面的准备步骤坏了"，不让"跳过"冒充"通过"。
+name: Integration
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remote:
+    name: 远程执行与分发 (SC-E03)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      # 目标地址用 127.0.0.2 而不是 127.0.0.1：somcli 把 host/ip 为 localhost 或
+      # 127.0.0.1 的节点当本机直接 sh -c 执行，只有回环别名能逼它真的走 ssh。
+      # Linux 上 127.0.0.0/8 整段都在 lo 上，sshd 监听 0.0.0.0 就能连，无需额外配地址。
+      - name: 准备 sshd 与免密登录
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-server
+          sudo systemctl enable --now ssh
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_rsa -C somcli-integration
+          cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+
+      # 先自检一次。准备步骤坏了就在这里报出来，而不是让一堆用例各自失败一遍。
+      - name: 自检 SSH 可达
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            -o StrictHostKeyChecking=no \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            "$(id -un)@127.0.0.2" 'echo SSH_CONNECTION=$SSH_CONNECTION'
+
+      - name: 测试
+        run: go test -tags=remote ./test/remote/... -count=1 -v -timeout 15m
+
+  multinode:
+    name: 多节点编排 (SC-E04/E05/E06)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: 自检 docker 可用
+        run: docker info --format '{{.ServerVersion}}' && docker compose version
+
+      # 容器由 test/multinode 的 TestMain 起停（fixture 见 test/fixtures/multinode）。
+      # KEEP=1 让失败后容器还在，下一步才能把节点日志捞出来 —— runner 是一次性的，
+      # 留着不影响别人。
+      - name: 测试
+        env:
+          SOMCLI_MULTINODE_KEEP: '1'
+        run: go test -tags=multinode ./test/multinode/... -count=1 -v -timeout 25m
+
+      - name: 失败时收集节点日志
+        if: failure()
+        run: docker compose -f test/fixtures/multinode/compose.yaml logs --no-color
+
+      - name: 清理容器
+        if: always()
+        run: docker compose -f test/fixtures/multinode/compose.yaml down -v --remove-orphans
