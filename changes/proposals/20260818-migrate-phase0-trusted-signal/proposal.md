@@ -68,6 +68,7 @@ SC-X02（`cli_debug_test.go`）、SC-X06（`exitcode_test.go`）、SC-P10（构�
 | D11 | `cmd/install.go` | `installer.InstallTool(file, name, quiet)` 早已实现，但 `-n/--name` 从未注册 → 按名安装（SC-E07）整条路径不可达，`somcli install -f cfg -n b` 报 `unknown shorthand flag: 'n'`。 | 已修：注册 `-n/--name` 并接上 `InstallTool` |
 | D12 | `cmd/root.go` | `--source` 帮助写着 "comma-separated or multiple flags"，类型却是 `BoolVar`。绑到 viper 的 `mirrors_source` 后 `GetStringSlice` 读回 `["false"]`：每条命令都白跑一次 `InitSource` 并打印 `加载源 -> [false]`，**且把配置文件里真正的 `mirrors_source` 盖掉**。 | 已修：改 `StringSliceVar`，并在 `len(sourceList) > 0` 时才 `InitSource` |
 | G9 | `configs/*.yaml`、`cmd/install.go` | 示例配置与帮助描述了一批从未被消费的字段/能力：资源级 `method`（`install --help` 声称支持 package/binary/source/container 四种安装方式，实际只有 download→scripts 一条路径）、`res_type`、`files`、`extra_files`、资源级 `roles`，以及 `configs/tools.yaml` 里的 `package:`；`configs/kubernetes-cluster.yaml` 更是写了 5 个 YAML 文档而加载器只读第一个，后 4 段被静默丢弃。 | 本里程碑：示例配置按当前 schema 重写、`install --help` 改为陈述真实流程并明说 `method` 未消费、`validate` 兜住回归；`method` 真正分发留给 M1 |
+| D13 | `pkg/utils/ssh.go` | `sshKey: "~/.ssh/id_rsa"`（**所有示例配置都这么写**）只在 `RunCommandOnNode` 里被展开，`CopyToRemote` / `SSHMCmd` / `RsyncCopy` / `SSHClient` / `getSSHConfig` 都拿原样字符串。它们是 `exec` 直接拉起 ssh/scp 的，没有 shell 帮忙展开 `~`，于是照文档写配置的人**文件分发一律失败**。写 SC-E03 时故意在配置里保留 `~` 形式才撞出来。 | 已修：上述五个入口统一走 `ExpandPath`。`pkg/docker/installer.go` 不动 —— 它拼的是交给 `bash -c` 执行的命令串，那里 `~` 本来就会展开 |
 
 新增只读入口 `somcli validate -f`：走 install 完全相同的加载与渲染路径但一步动作都不做，
 用于在动手装之前回答"配置写对了吗"。它同时是 SC-X05 的判据载体 —— 上面 D12 与 G9 都是它一跑就现形的。

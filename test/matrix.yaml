@@ -39,11 +39,14 @@ scenarios:
     phase: 0
     status: done
 
+  # SC-E03/E04/E05/E06 的用例已写好，但本机跑不动：remote 组要一个能免密登录的 sshd，
+  # multinode 组要 docker 与 Linux 网桥直连。判定留给 .github/workflows/integration.yml，
+  # 这条流水线绿了再改 done —— 与 SC-D01/D03/D04 同一处置。
   - id: SC-E03
     desc: 单个远程节点安装
     env: [remote]
     files: [test/remote/dispatch_test.go]
-    defects: [D1]
+    defects: [D1, D13]
     phase: 0
     status: pending
 

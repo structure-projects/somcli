@@ -106,24 +106,28 @@
 
 ## M0.4 remote 组（SC-E03）
 
-- [ ] `test/remote/` 建包，build tag `remote`，未满足前置时 `t.Skip` 并说明原因
-- [ ] `dispatch_test.go` SC-E03：单远程节点，走真实 `scp` 分发 + SSH 执行 → 断言远端路径有文件、内容一致
-- [ ] CI 内 SSH 自连接准备步骤（`ssh-keygen` + `authorized_keys` + `ssh-keyscan`）
-- [ ] `test/matrix.yaml` 将 SC-E03 置 done
+- [x] `test/remote/` 建包，build tag `remote`，未满足前置时 `t.Skip` 并说明原因（CI 里改为硬失败，不让"跳过"冒充"通过"）
+- [x] `dispatch_test.go` SC-E03：单远程节点，走真实 `scp` 分发 + SSH 执行 → 断言远端路径有文件、内容一致
+- [x] 目标地址取 `127.0.0.2`：somcli 把 `localhost`/`127.0.0.1` 当本机 `sh -c`，只有回环别名能逼它走 ssh
+- [x] 用 `$SSH_CONNECTION` 作判据：自连接时文件系统是共享的，"远端有文件"证不了走了 SSH
+- [x] 顺带修 D13：`sshKey` 的 `~` 只在 `RunCommandOnNode` 展开，`scp`/`ssh` 那几个入口拿的是原样字符串 → 照示例配置写的人分发一律失败
+- [x] CI 内 SSH 自连接准备步骤（`ssh-keygen` + `authorized_keys` + 可达自检）
+- [ ] `test/matrix.yaml` 将 SC-E03 置 done（等 integration 流水线绿）
 
 ## M0.5 multinode 组（SC-E04 / SC-E05 / SC-E06）
 
-- [ ] `test/fixtures/multinode/compose.yaml`：3 个 systemd-enabled sshd 容器 + 自定义网络
-- [ ] `test/multinode/` 建包，build tag `multinode`
-- [ ] `dispatch_test.go` SC-E04：多节点同一资源 → 每个节点都有产物
-- [ ] `dispatch_test.go` SC-E05：`hosts` 定向 —— **目标节点有文件 且 运行 somcli 的容器无文件**（D1 终极回归）
-- [ ] `dispatch_test.go` SC-E06：混合本机 / 远程编排
-- [ ] `test/matrix.yaml` 将 SC-E04/E05/E06 置 done
+- [x] `test/fixtures/multinode/`：3 个 sshd 容器 + 自定义网络固定 IP（somcli 写死 22 端口，只能靠独立地址而非映射端口）
+- [x] `test/multinode/` 建包，build tag `multinode`，TestMain 负责起停容器
+- [x] `dispatch_test.go` SC-E04：多节点同一资源 → 每个节点都有产物（比对各自 `/etc/hostname`，防"三次都跑在同一台"蒙过）
+- [x] `dispatch_test.go` SC-E05：`hosts` 定向 —— **目标节点有文件 且 未点名节点与操作机都没有**（D1 终极回归）
+- [x] `dispatch_test.go` SC-E06：混合本机 / 远程编排，两个方向都断言
+- [ ] `test/matrix.yaml` 将 SC-E04/E05/E06 置 done（等 integration 流水线绿）
 
 ## M0.6 流水线
 
-- [ ] `.github/workflows/integration.yml`：`remote` 与 `multinode` 两个 job，失败时收集容器日志
-- [ ] 确认 `go test ./...` 默认仍为秒级（build tag 隔离生效）
+- [x] `.github/workflows/integration.yml`：`remote` 与 `multinode` 两个 job，失败时收集容器日志
+- [x] 确认 `go test ./...` 默认仍为秒级（build tag 隔离生效）：实测 34s，全部耗时在 local 组的真实等待上
+- [x] 修掉 `ci.yml` 里恒红的 import 守卫（原先裸匹配包名，连注释都判违规）
 - [ ] 确认 `ci.yml` 三操作机矩阵（ubuntu / ubuntu-arm / macos）上 local 组全绿
 
 ## 测试
