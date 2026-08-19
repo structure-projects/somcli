@@ -669,7 +669,7 @@ scenarios:
     files: [test/local/doc_commands_test.go]
     defects: [G4, G5]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-X05
     desc: configs 下每个示例文件都能被解析并渲染
