@@ -17,40 +17,74 @@ package cluster
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
-	"gopkg.in/yaml.v2"
 )
 
-// LoadConfig 加载集群配置文件
-func LoadConfig(configFile string) (*types.ClusterConfig, error) {
-	data, err := os.ReadFile(configFile)
+// LoadConfig 从统一配置里挑出要操作的那一套集群。
+//
+// 配置的 cluster: 是列表，一份文件可以同时描述 my-swarm 与 my-k8s；
+// 挑哪一套按 name -> type -> "只有一套就是它" 依次判定，都定不下来就报错并列出候选，
+// 而不是默默拿第一套去装。
+func LoadConfig(configFile, name, clusterType string) (*types.ClusterConfig, error) {
+	config, err := utils.LoadConfig(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, err
 	}
 
-	var config types.ClusterConfig
-	if err := yaml.UnmarshalStrict(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	spec, err := selectCluster(config.Clusters, name, clusterType)
+	if err != nil {
+		return nil, err
 	}
 
-	// 验证配置
-	if config.Cluster.Type == "" {
-		return nil, fmt.Errorf("cluster type must be specified")
-	}
-
-	if len(config.Cluster.Nodes) == 0 {
-		return nil, fmt.Errorf("at least one node must be specified")
+	if len(spec.Nodes) == 0 {
+		return nil, fmt.Errorf("集群 %q 没有配置任何节点", spec.Name)
 	}
 
 	// 把节点登记进全局节点表。缺了这一步，utils.GetNode 查不到任何主机，
 	// 声明为远程的安装会被解析失败或误当作本机执行。
-	utils.SetNode(config.Cluster.Nodes)
+	utils.SetNode(spec.Nodes)
 
-	return &config, nil
+	return &types.ClusterConfig{Cluster: *spec}, nil
+}
+
+func selectCluster(clusters []types.ClusterSpec, name, clusterType string) (*types.ClusterSpec, error) {
+	if len(clusters) == 0 {
+		return nil, fmt.Errorf("配置里没有 cluster: 段，没有可操作的集群")
+	}
+
+	var matched []*types.ClusterSpec
+	for i := range clusters {
+		c := &clusters[i]
+		if name != "" && c.Name != name {
+			continue
+		}
+		if clusterType != "" && c.Type != clusterType {
+			continue
+		}
+		matched = append(matched, c)
+	}
+
+	switch len(matched) {
+	case 1:
+		return matched[0], nil
+	case 0:
+		return nil, fmt.Errorf("配置里没有匹配的集群（name=%q type=%q），可选：%s",
+			name, clusterType, describeClusters(clusters))
+	default:
+		return nil, fmt.Errorf("配置里有 %d 套集群同时匹配，请用 --cluster-name 指定：%s",
+			len(matched), describeClusters(clusters))
+	}
+}
+
+func describeClusters(clusters []types.ClusterSpec) string {
+	var parts []string
+	for _, c := range clusters {
+		parts = append(parts, fmt.Sprintf("%s(%s)", c.Name, c.Type))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func EnsureWorkDir() error {

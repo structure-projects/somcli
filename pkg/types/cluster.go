@@ -15,15 +15,20 @@ limitations under the License.
 */
 package types
 
-// ClusterConfig 集群配置结构体
+// ClusterSpec 一套集群的定义。配置里 cluster: 是它的列表，
+// 一份配置可以同时描述多套集群（my-swarm / my-k8s），由 --cluster-name / --cluster-type 选定。
+type ClusterSpec struct {
+	Type        string       `yaml:"type"`
+	Name        string       `yaml:"name"`
+	Nodes       []RemoteNode `yaml:"nodes"`
+	K8sConfig   K8sConfig    `yaml:"k8sConfig,omitempty"`
+	SwarmConfig SwarmConfig  `yaml:"swarmConfig,omitempty"`
+}
+
+// ClusterConfig 是"已选定的那一套集群"，集群逻辑只关心这个。
+// 从配置里挑哪一套由 cluster.LoadConfig 决定。
 type ClusterConfig struct {
-	Cluster struct {
-		Type        string       `yaml:"type"`
-		Name        string       `yaml:"name"`
-		Nodes       []RemoteNode `yaml:"nodes"`
-		K8sConfig   K8sConfig    `yaml:"k8sConfig,omitempty"`
-		SwarmConfig SwarmConfig  `yaml:"swarmConfig,omitempty"`
-	} `yaml:"cluster"`
+	Cluster ClusterSpec
 }
 
 type K8sConfig struct {

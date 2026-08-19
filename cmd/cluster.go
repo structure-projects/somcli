@@ -36,6 +36,7 @@ var clusterCreateCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile, _ := cmd.Flags().GetString("file")
+		clusterName, _ := cmd.Flags().GetString("cluster-name")
 		clusterType, _ := cmd.Flags().GetString("cluster-type")
 		force, _ := cmd.Flags().GetBool("force")
 		skipPrecheck, _ := cmd.Flags().GetBool("skip-precheck")
@@ -47,7 +48,7 @@ var clusterCreateCmd = &cobra.Command{
 		}
 
 		// 创建集群
-		err := cluster.CreateCluster(configFile, clusterType, force, skipPrecheck)
+		err := cluster.CreateCluster(configFile, clusterName, clusterType, force, skipPrecheck)
 		if err != nil {
 			utils.PrintError("Failed to create cluster: %v", err)
 			os.Exit(1)
@@ -64,6 +65,8 @@ var clusterRemoveCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile, _ := cmd.Flags().GetString("file")
+		clusterName, _ := cmd.Flags().GetString("cluster-name")
+		clusterType, _ := cmd.Flags().GetString("cluster-type")
 		force, _ := cmd.Flags().GetBool("force")
 
 		// 验证配置文件存在
@@ -73,7 +76,7 @@ var clusterRemoveCmd = &cobra.Command{
 		}
 
 		// 移除集群
-		err := cluster.RemoveCluster(configFile, force)
+		err := cluster.RemoveCluster(configFile, clusterName, clusterType, force)
 		if err != nil {
 			utils.PrintError("Failed to remove cluster: %v", err)
 			os.Exit(1)
@@ -86,13 +89,16 @@ var clusterRemoveCmd = &cobra.Command{
 func init() {
 	// 创建命令
 	clusterCreateCmd.Flags().StringP("file", "f", "", "Cluster configuration file (required)")
-	clusterCreateCmd.Flags().String("cluster-type", "", "Override cluster type in config (k8s|swarm)")
+	clusterCreateCmd.Flags().String("cluster-name", "", "Which cluster in the config to create (see cluster[].name)")
+	clusterCreateCmd.Flags().String("cluster-type", "", "Which cluster type in the config to create (k8s|swarm)")
 	clusterCreateCmd.Flags().Bool("force", false, "Force creation even if prechecks fail")
 	clusterCreateCmd.Flags().Bool("skip-precheck", false, "Skip pre-installation checks")
 	_ = clusterCreateCmd.MarkFlagRequired("file")
 
 	// 移除命令
 	clusterRemoveCmd.Flags().StringP("file", "f", "", "Cluster configuration file (required)")
+	clusterRemoveCmd.Flags().String("cluster-name", "", "Which cluster in the config to remove (see cluster[].name)")
+	clusterRemoveCmd.Flags().String("cluster-type", "", "Which cluster type in the config to remove (k8s|swarm)")
 	clusterRemoveCmd.Flags().Bool("force", false, "Force removal without confirmation")
 	_ = clusterRemoveCmd.MarkFlagRequired("file")
 

@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/structure-projects/somcli/pkg/utils"
+	"github.com/structure-projects/somcli/pkg/types"
 	"gopkg.in/yaml.v2"
 )
 
@@ -54,7 +54,7 @@ func getDefaultHarborImages() ([]Image, error) {
 	}
 
 	return []Image{
-		{"library/nginx", "latest"},
+		{Name: "library/nginx", Tag: "latest"},
 		// {"library/redis", "alpine"},
 		// {"library/postgres", "13"},
 		// {"library/mysql", "8.0"},
@@ -69,7 +69,7 @@ func getDefaultK8sImages() ([]Image, error) {
 	}
 
 	return []Image{
-		{"k8s.gcr.io/pause", "3.7"},
+		{Name: "k8s.gcr.io/pause", Tag: "3.7"},
 		// {"k8s.gcr.io/kube-apiserver", "v1.25.0"},
 		// {"k8s.gcr.io/kube-controller-manager", "v1.25.0"},
 		// {"k8s.gcr.io/kube-scheduler", "v1.25.0"},
@@ -102,32 +102,43 @@ func getDefaultImageFile(filename string) (string, error) {
 	return "", fmt.Errorf("default image file not found: %s", filename)
 }
 
+// loadCustomImageList 认三种写法，按"信息量从多到少"依次尝试：
+//  1. 统一配置：整份 somcli 配置，取它的 images: 段
+//  2. 裸列表：- name: nginx / tag: latest
+//  3. 纯文本：每行一个 name:tag（README 里的 image-list.txt 就是这种）
 func loadCustomImageList(filePath string) ([]Image, error) {
-	utils.PrintWarning(filePath)
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image list file: %v", err)
 	}
 
-	var images []Image
-	if err := yaml.Unmarshal(data, &images); err != nil {
-		// If YAML unmarshal fails, try to parse as plain text
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			parts := strings.Split(line, ":")
-			if len(parts) != 2 {
-				logrus.Warnf("Invalid image format: %s", line)
-				continue
-			}
-			images = append(images, Image{
-				Name: strings.TrimSpace(parts[0]),
-				Tag:  strings.TrimSpace(parts[1]),
-			})
+	var config types.ResourceConfig
+	if err := yaml.UnmarshalStrict(data, &config); err == nil {
+		if len(config.Images) == 0 {
+			return nil, fmt.Errorf("%s 是一份 somcli 配置，但里面没有 images: 段", filePath)
 		}
+		return config.Images, nil
+	}
+
+	var images []Image
+	if err := yaml.UnmarshalStrict(data, &images); err == nil {
+		return images, nil
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, tag, found := strings.Cut(line, ":")
+		if !found {
+			logrus.Warnf("Invalid image format: %s", line)
+			continue
+		}
+		images = append(images, Image{Name: strings.TrimSpace(name), Tag: strings.TrimSpace(tag)})
+	}
+	if len(images) == 0 {
+		return nil, fmt.Errorf("%s 里没有可用的镜像条目", filePath)
 	}
 
 	return images, nil

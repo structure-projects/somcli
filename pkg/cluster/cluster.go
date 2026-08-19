@@ -20,15 +20,10 @@ import (
 )
 
 // CreateCluster 创建集群
-func CreateCluster(configFile, clusterType string, force, skipPrecheck bool) error {
-	config, err := LoadConfig(configFile)
+func CreateCluster(configFile, clusterName, clusterType string, force, skipPrecheck bool) error {
+	config, err := LoadConfig(configFile, clusterName, clusterType)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// 如果命令行指定了集群类型，则覆盖配置文件中的设置
-	if clusterType != "" {
-		config.Cluster.Type = clusterType
 	}
 
 	switch config.Cluster.Type {
@@ -42,8 +37,8 @@ func CreateCluster(configFile, clusterType string, force, skipPrecheck bool) err
 }
 
 // RemoveCluster 移除集群
-func RemoveCluster(configFile string, force bool) error {
-	config, err := LoadConfig(configFile)
+func RemoveCluster(configFile, clusterName, clusterType string, force bool) error {
+	config, err := LoadConfig(configFile, clusterName, clusterType)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

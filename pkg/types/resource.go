@@ -15,7 +15,9 @@ limitations under the License.
 */
 package types
 
-// 资源配置下载配置文件结构
+// ResourceConfig 是 somcli 的统一配置：一份文件描述全部场景，各命令只取自己那一段 ——
+// install/download 取 resources，cluster 取 cluster，images 取 images，nodes 谁都可能用。
+// 别人的段落原样放着不影响解析，缺自己那段才报错。
 type ResourceConfig struct {
 	// 全局设置。同名命令行标志优先于此处。
 	Offline       bool     `yaml:"offline"`
@@ -24,9 +26,11 @@ type ResourceConfig struct {
 	WorkDir       string   `yaml:"workdir"`
 	MirrorsSource []string `yaml:"mirrors_source"`
 
-	Proxy     string       `yaml:"proxy"` // 可选代理
-	Resources []Resource   `yaml:"resources,omitempty"`
-	Nodes     []RemoteNode `yaml:"nodes"`
+	Proxy     string        `yaml:"proxy"` // 可选代理
+	Resources []Resource    `yaml:"resources,omitempty"`
+	Nodes     []RemoteNode  `yaml:"nodes"`
+	Clusters  []ClusterSpec `yaml:"cluster,omitempty"`
+	Images    []Image       `yaml:"images,omitempty"`
 }
 
 // Resource 单个资源定义

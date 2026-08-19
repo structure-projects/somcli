@@ -15,6 +15,8 @@ limitations under the License.
 */
 package images
 
+import "github.com/structure-projects/somcli/pkg/types"
+
 type Config struct {
 	Scope      string
 	Repo       string
@@ -23,10 +25,8 @@ type Config struct {
 	OutputFile string
 }
 
-type Image struct {
-	Name string `yaml:"name"`
-	Tag  string `yaml:"tag"`
-}
+// Image 就是统一配置 images: 段里的元素，别处不再单独定义一份。
+type Image = types.Image
 
 const (
 	ScopeHarbor = "harbor"
