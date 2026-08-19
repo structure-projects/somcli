@@ -130,18 +130,36 @@ func loadCustomImageList(filePath string) ([]Image, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		name, tag, found := strings.Cut(line, ":")
-		if !found {
+		name, tag, ok := splitNameTag(line)
+		if !ok {
 			logrus.Warnf("Invalid image format: %s", line)
 			continue
 		}
-		images = append(images, Image{Name: strings.TrimSpace(name), Tag: strings.TrimSpace(tag)})
+		images = append(images, Image{Name: name, Tag: tag})
 	}
 	if len(images) == 0 {
 		return nil, fmt.Errorf("%s 里没有可用的镜像条目", filePath)
 	}
 
 	return images, nil
+}
+
+// splitNameTag 从 name:tag 一行里切出镜像名与 tag。
+//
+// 必须切最后一个冒号：registry:5000/nginx:latest 里第一个冒号是仓库端口，
+// 切在那里会得到 name=registry、tag=5000/nginx:latest，然后拿这个错名字去 pull。
+// 最后一段还含 / 的说明那个冒号也是端口，此时整行没有 tag。
+func splitNameTag(line string) (name, tag string, ok bool) {
+	idx := strings.LastIndex(line, ":")
+	if idx < 0 {
+		return "", "", false
+	}
+	name = strings.TrimSpace(line[:idx])
+	tag = strings.TrimSpace(line[idx+1:])
+	if name == "" || tag == "" || strings.Contains(tag, "/") {
+		return "", "", false
+	}
+	return name, tag, true
 }
 
 func saveImageList(images []Image, filePath string) error {
