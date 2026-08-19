@@ -78,12 +78,20 @@ func somcliBinary(t *testing.T) string {
 // 会让用例受本机配置影响，且 {{.HostDir}} 渲染出的路径会指向真实家目录。
 func runIn(t *testing.T, workdir string, args ...string) (int, string) {
 	t.Helper()
+	return runEnvIn(t, workdir, nil, args...)
+}
+
+// runEnvIn 与 runIn 相同，额外附加 / 覆盖环境变量。
+// 用于从外部观察环境开关（SOMCLI_OFFLINE）与运行环境本身（缩窄 PATH）的影响。
+func runEnvIn(t *testing.T, workdir string, env []string, args ...string) (int, string) {
+	t.Helper()
 
 	bin := somcliBinary(t)
 	full := append([]string{"--workdir", workdir}, args...)
 
 	cmd := exec.Command(bin, full...)
 	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
 
 	code := 0

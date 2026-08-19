@@ -120,7 +120,7 @@ scenarios:
     files: [test/local/vars_test.go]
     defects: [E3]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E13
     desc: 模板变量全集在 URL / target / 脚本三处上下文一致可用
@@ -222,7 +222,7 @@ scenarios:
     files: [test/local/download_test.go]
     defects: [F3]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D03
     desc: 下载失败重试耗尽则退出码非 0 且不打印 SUCCESS
@@ -246,7 +246,7 @@ scenarios:
     files: [test/local/download_test.go]
     defects: [F3]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D06
     desc: target 中使用 {{.Filename}} / {{.Ext}}
@@ -254,15 +254,15 @@ scenarios:
     files: [test/local/download_test.go]
     defects: [E5]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D07
     desc: github_proxy 只对 github.com 生效，不误伤其他域名
     env: [local]
     files: [test/local/download_test.go]
-    defects: []
+    defects: [D14]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D08
     desc: 离线模式——缓存命中直接使用
@@ -270,7 +270,7 @@ scenarios:
     files: [test/local/offline_test.go]
     defects: []
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D09
     desc: 离线模式——缓存缺失则明确报错而非静默
@@ -278,7 +278,7 @@ scenarios:
     files: [test/local/offline_test.go]
     defects: []
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-D10
     desc: 远程已存在同 hash 文件则跳过传输
@@ -294,7 +294,7 @@ scenarios:
     files: [test/local/download_test.go, .github/workflows/ci.yml]
     defects: [F5]
     phase: 1
-    status: pending
+    status: done
 
   # ---------- SC-F 失败、诊断与恢复 ----------
   - id: SC-F01
@@ -668,7 +668,7 @@ scenarios:
     files: [test/local/offline_test.go]
     defects: [F12]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-X04
     desc: 文档中出现的每条命令与标志真实存在

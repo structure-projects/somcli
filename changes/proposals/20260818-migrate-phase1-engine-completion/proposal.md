@@ -7,12 +7,13 @@
 | 类型 | migration |
 | 创建日期 | 2026-08-18 |
 | 创建人 | chuck |
-| 状态 | draft |
+| 状态 | coding（2026-08-19 起，M1.1 进行中） |
 | 优先级 | high |
 | 总纲 | `changes/proposals/20260818-migrate-arch-convergence/proposal.md` |
 | 技术附录 | `doc/提案-架构收敛与测试体系.md` §4.2（E1-E7）、§5.2 Phase 1、§6.4 |
 | 前置 | M0 完成（否则测试结果不可信） |
-| 场景 | 27 个（`test/matrix.yaml` 中 `phase: 1`），当前全部 pending |
+| 场景 | 28 个（`test/matrix.yaml` 中 `phase: 1`），当前全部 pending |
+| 分支 | `feat-arch-convergence`（沿用 M0 的分支，见下「执行期偏差记账」） |
 
 
 > 验证方式遵循总纲「功能验证约定」：一律黑盒 —— 编译二进制 → 喂真实配置 → 跑真实命令 →
@@ -103,8 +104,65 @@
 |---|---|
 | CLI | 新增 `somcli uninstall`、`--set`、`--parallel`、`status`；`registry uninstall` 新增自身标志；`delete` 新增 `-n`。均为新增，无删除 |
 | 配置 | `extra_files` 的 struct tag 由 `ExtraFiles` 改为 `extra_files`（原 tag 本就与所有示例不匹配，无实际用户）；新增 `vars`、`check`、`on_error` 均为可选字段 |
+| 配置 | **BREAKING**：删除顶层 `proxy:` 键，`download` 改与 `install` 同读 `github_proxy`。风险与回滚见「执行期偏差记账」D14 |
 | 行为 | **BREAKING**：`method` 从"全部等价于跑脚本"变为按语义分发，依赖旧行为的配置需显式写 `method: script` |
 | 缓存 | compose 缓存目录名修正，旧目录失效 |
+
+## 执行期偏差记账
+
+M1.1 实施时相对本提案原文的偏差，逐条记在这里，避免"提案说一套、代码做一套"。
+
+### 分支：沿用 `feat-arch-convergence`，不另开 `feat-engine-completion`
+
+M0 的分支尚未合入 master，M1 的验证依赖 M0 建立的可信信号（黑盒骨架、CI 流水线）。
+另开分支就得先把 M0 合了，或者在一个没有测试骨架的基线上写 M1 的用例。
+代价是这条分支同时承载 M0 与 M1 两个提案的提交，回滚粒度落到单个提交而不是整条分支 ——
+四个子里程碑各自独立提交这一条仍然成立，回滚预案不受影响。
+
+### F5：只落 `net/http`，砍掉 wget/curl 降级路径
+
+提案原文写"wget/curl 只在需要走系统代理配置等特殊场景下作为降级"。实施时发现这个降级理由不成立：
+`http.DefaultTransport` 本身就走 `ProxyFromEnvironment`，`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`
+标准库直接认。留着降级路径等于留一条**没有任何用例覆盖、也没有触发条件**的分支 ——
+正是 M0 要消灭的那类东西（代码在、从没跑过、以为它在工作）。
+所以下载器只有 `net/http` 一条路径，wget/curl 不再被 exec。
+
+对应用例 SC-D11 把 `PATH` 缩到空目录来钉住这件事：任何"其实还在偷偷 shell out"的实现都会当场失败。
+
+### D14：删掉顶层 `proxy:` 配置键（BREAKING）
+
+写 SC-D07/走代理 时才发现 `download` 与 `install` 读的**不是同一个键**：
+`install` 读 `github_proxy`（`pkg/installer/installer.go`），`download` 读一个独立的顶层 `proxy:`
+（`ResourceConfig.Proxy`）。于是同一份配置，`somcli install` 认代理、`somcli download` 不认。
+
+- 影响面：`ResourceConfig.Proxy` 全仓只有一个消费者，`configs/` 下所有示例与 `doc/` 全文都没有出现过 `proxy:` 这个键；
+- 风险：如果确有用户在配置里写了 `proxy:`，升级后该键因 `UnmarshalStrict` 直接报"未知字段"而**不是静默失效** —— 报错比装错好；
+- 迁移写法：把 `proxy: X` 改成 `github_proxy: X`；
+- 回滚：该改动与 F5 同属一个提交，`git revert` 即可。
+
+顺带修掉一处误导性日志：旧实现下载器用整条 URL 做 `Contains("github.com")`、改写函数用主机名做
+`Contains`，两道判据不一致，非 GitHub 地址会打出"用户使用代理"却并不真的走代理。
+现在判据只有一处，且是主机名精确匹配或子域（`github.com.evil.com` 不再命中）。
+
+### F6：M0 已修，本里程碑只补用例
+
+`CopyToRemote` 的 `~` 展开在 M0 已作为 D13 修掉（`pkg/utils/ssh.go` 的 `ExpandPath`）。
+M1 这边只欠 remote 组的 SC-F03 用例，无代码改动。
+
+### E3：自定义变量走 `{{.Vars.xxx}}` 命名空间
+
+没有把 `vars` 平铺到模板上下文顶层。平铺的话用户写一个 `vars: {WorkDir: ...}` 就能遮掉内置变量，
+而遮掉之后的症状是产物落到别处，很难查。加一层 `.Vars` 的代价只是配置里多写五个字符。
+
+同时给模板加上 `Option("missingkey=error")`：上下文从结构体改成 map 之后，
+`text/template` 对缺键默认渲染 `<no value>` 而不报错（结构体字段才报错）。
+少了这个选项，SC-F06（引用未声明变量必须报错）会**在实现变更后静默失效** —— 用例还在、判据还在，但守不住了。
+
+### 场景数：28 个，不是 27 个
+
+`test/matrix.yaml` 里 `phase: 1` 实为 28 条，多出的是 SC-X08（`env: cluster`）。
+`phase: 0` 的 done 数也不是提案原文推算的 22 而是 24（M0 执行期新增了两条）。
+验收标准的计数已按 28 / 52 更正。
 
 ## 双规范并存期约定
 
@@ -121,12 +179,12 @@
 
 ## 验收标准
 
-- [ ] `test/matrix.yaml` 中 27 个 `phase: 1` 场景全部 done，累计 49 done
+- [ ] `test/matrix.yaml` 中 28 个 `phase: 1` 场景全部 done，累计 52 done（当前 33）
 - [ ] 21 个叶子命令中 `🕳` 与 `❌` 计数为 0
 - [ ] `configs/tools.yaml` 能真实装出 kubectl / helm / jq 三者
 - [ ] install → uninstall 后环境干净（黑盒断言）
 - [ ] 连续执行两次结果一致且无重复副作用（黑盒断言）
-- [ ] changelog 补条目，`method` 语义变更单列为 BREAKING
+- [ ] changelog 补条目，`method` 语义变更与顶层 `proxy:` 键删除各自单列为 BREAKING
 
 ## 任务清单
 

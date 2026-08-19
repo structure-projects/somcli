@@ -26,9 +26,8 @@ type ProxyConfig struct {
 	GitHubProxy string // GitHub代理地址，如 "https://gh-proxy.com/"
 }
 
-// ApplyGitHubProxy 应用GitHub代理到原始URL
+// ApplyGitHubProxy 应用GitHub代理到原始URL。非 GitHub 系地址原样返回。
 func ApplyGitHubProxy(rawURL, proxy string) (string, error) {
-	PrintInfo("用户使用代理： -> %s", proxy)
 	if proxy == "" {
 		return rawURL, nil
 	}
@@ -44,12 +43,35 @@ func ApplyGitHubProxy(rawURL, proxy string) (string, error) {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// 只处理github.com的URL
-	if !strings.Contains(u.Host, "github.com") {
+	if !isGitHubHost(u.Hostname()) {
 		return rawURL, nil
 	}
+
+	PrintInfo("用户使用代理： -> %s", proxy)
 
 	// 构建代理URL
 	proxyURL := proxy + u.Host + u.Path
 	return proxyURL, nil
+}
+
+// githubHosts 会被代理改写的主机。
+//
+// 判据必须是主机名精确匹配或子域，不能用 strings.Contains：
+// 后者会把 github.com.evil.com 也算成 GitHub，把内网地址连同凭据一起送给第三方代理；
+// 而在调用侧对整个 URL 做 Contains 还会命中 https://example.com/github.com/x 这种路径。
+var githubHosts = []string{
+	"github.com",
+	"raw.githubusercontent.com",
+	"objects.githubusercontent.com",
+	"codeload.github.com",
+}
+
+func isGitHubHost(host string) bool {
+	host = strings.ToLower(host)
+	for _, known := range githubHosts {
+		if host == known || strings.HasSuffix(host, "."+known) {
+			return true
+		}
+	}
+	return false
 }

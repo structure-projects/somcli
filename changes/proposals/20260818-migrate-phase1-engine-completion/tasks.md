@@ -5,24 +5,31 @@
 
 ## 准备
 
-- [ ] M0 已归档，`current-proposal` 已切到本提案
-- [ ] 阅读 `proposal.md` 与技术附录 §4.2 / §5.2 Phase 1 / §6.4
-- [ ] 切 `feat-engine-completion` 分支
+- [x] M0 已归档，`current-proposal` 已切到本提案
+- [x] 阅读 `proposal.md` 与技术附录 §4.2 / §5.2 Phase 1 / §6.4
+- [x] ~~切 `feat-engine-completion` 分支~~ → 沿用 `feat-arch-convergence`，理由见 proposal「执行期偏差记账」
 
 ## M1.1 基础语义修正
 
-- [ ] E5：统一 `ParseStr` 与 `ParseTargetPath` 的变量集，补 `Filename`/`Ext`（SC-D06）
-- [ ] E3：`ResourceConfig` 新增 `vars` map，合入模板上下文；`--set k=v` 覆盖（SC-E12）
-- [ ] F3：绝对路径 `target` 时 `LocalPath` 不再无条件 `filepath.Join(cacheDir, ...)`（SC-D05）
-- [ ] F6：`CopyToRemote` 展开 `~`，与 `RunCommandOnNode` 行为一致（SC-F03）
-- [ ] F5：下载器改 `net/http` 主实现，wget/curl 仅作降级（SC-D11）
-      优先级最高的一条：`pkg/utils/download.go:151` 写死 exec wget，于是"装工具的工具"
-      要求 wget 先装好 —— 没有 wget 的机器上 somcli 连 wget 都装不了。改完顺带让
-      SC-D01/D03/D04 在 macOS 与开发机上也能跑（M0 里那两处只能 `t.Skip`），
-      并解开 SC-E13 结转过来的 URL / target 两处模板上下文断言
-- [ ] 下载器补齐：checksum 不符即删残留（SC-D02）、代理只对 github.com 生效（SC-D07）、离线命中（SC-D08）、离线缺失明确报错（SC-D09）、远程同 hash 跳过传输（SC-D10）
-- [ ] F12 相关的离线开关一致性：`SOMCLI_OFFLINE` 与 `--offline`（SC-X03）
-- [ ] 黑盒用例齐备并把上述场景置 done
+- [x] E5：统一 `ParseStr` 与 `ParseTargetPath` 的变量集，补 `Filename`/`Ext`（SC-D06）
+      两处各写一份结构体改为共用 `TemplateContext`，从此不可能再漂移
+- [x] E3：`ResourceConfig` 新增 `vars` map，合入模板上下文；`--set k=v` 覆盖（SC-E12）
+      走 `{{.Vars.xxx}}` 命名空间，用户变量不可能遮掉内置变量；模板加 `missingkey=error`
+      守住 SC-F06（map 上下文默认渲染 `<no value>` 而不报错）
+- [x] F3：绝对路径 `target` 时 `LocalPath` 不再无条件 `filepath.Join(cacheDir, ...)`（SC-D05）
+      顺带修掉"只建 cacheDir 不建 target 父目录"，`target: bin/nested/tool.sh` 才能落盘
+- [x] F6：`CopyToRemote` 展开 `~`，与 `RunCommandOnNode` 行为一致（SC-F03）
+      M0 已作为 D13 修掉，本里程碑只欠 remote 组用例
+- [x] F5：下载器改 `net/http` 主实现，~~wget/curl 仅作降级~~ → 只有 `net/http` 一条路径（SC-D11）
+      降级路径砍掉的理由见「执行期偏差记账」：`http.DefaultTransport` 本就认
+      `HTTP_PROXY`/`NO_PROXY`，留着等于留一条永不触发、无人覆盖的分支。
+      改完 SC-D01/D03/D04 在 macOS 与开发机上不再需要 `t.Skip`
+- [x] 下载器补齐：checksum 不符即删残留（SC-D02）、代理只对 github.com 生效（SC-D07）、离线命中（SC-D08）、离线缺失明确报错（SC-D09）、远程同 hash 跳过传输（SC-D10）
+      SC-D10 属 remote 组，见下方遗留项；顺带发现并修掉 D14（`download` 与 `install` 代理配置键不一致）
+- [x] F12 相关的离线开关一致性：`SOMCLI_OFFLINE` 与 `--offline`（SC-X03）
+- [ ] 遗留：remote 组的 SC-D10 与 SC-F03 用例（`test/remote/`）
+- [x] 黑盒用例齐备并把上述场景置 done（local 组；remote 两条待补）
+      每条新用例都在 M1 前的提交上跑过并确认变红，且红的原因各自归属其缺陷
 
 ## M1.2 method 分发 / extra_files / uninstall
 
@@ -72,7 +79,7 @@
 
 ## 归档
 
-- [ ] changelog 补条目，`method` 语义变更与 compose 缓存目录变更单列
+- [ ] changelog 补条目，`method` 语义变更、顶层 `proxy:` 键删除、compose 缓存目录变更各自单列
 - [ ] `git mv changes/proposals/20260818-migrate-phase1-engine-completion/ changes/archive/`
 - [ ] `current-proposal` 切到 `20260818-migrate-phase2-cluster-as-config`
 
@@ -80,5 +87,5 @@
 
 - [ ] 通过 ci-gate
 - [ ] commit message 符合 Conventional Commits
-- [ ] 分支为 `feat-engine-completion`
+- [x] 分支为 ~~`feat-engine-completion`~~ `feat-arch-convergence`（见「执行期偏差记账」）
 - [ ] 推送需用户确认

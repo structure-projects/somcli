@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/viper"
 	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
 )
@@ -60,7 +61,13 @@ func DownloadSingleFile(downloader *utils.Downloader, res types.Resource, url st
 	}
 
 	cacheDir := filepath.Join(utils.GetDownloadDir(), res.Name, res.Version)
-	fullPath := filepath.Join(cacheDir, targetPath)
+	// target 写绝对路径时产物就落在那个绝对路径上，不能再往 cacheDir 里拼。
+	// 拼了的话 LocalPath 指向一个不存在的路径 —— 于是校验和读不到文件、分发拷不到东西、
+	// 校验失败时要删的残留也删不掉，三处一起错（F3）。
+	fullPath := targetPath
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(cacheDir, targetPath)
+	}
 	utils.PrintInfo("输出文件信息 -> 缓存目录： %s, 目标文件: %s , 下载地址: %s ", cacheDir, targetPath, parsedURL)
 
 	err = downloader.Download(parsedURL, targetPath, cacheDir)
@@ -91,8 +98,9 @@ func DownloadSingleFile(downloader *utils.Downloader, res types.Resource, url st
 
 // DownloadResources 执行批量下载。任一资源失败即返回错误，使调用方的退出码非 0。
 func DownloadResources(config *types.ResourceConfig, quiet bool) ([]types.DownloadResult, error) {
-	// 初始化下载器
-	downloader := utils.NewDownloader(config.Proxy)
+	// 代理取 github_proxy，与 installer.Install 同源。这里曾经读一个独立的顶层 proxy: 键，
+	// 于是同一份配置 install 认代理、download 不认 —— 正是统一配置要消灭的差异。
+	downloader := utils.NewDownloader(viper.GetString("github_proxy"))
 	downloader.SetQuiet(quiet)
 
 	var results []types.DownloadResult

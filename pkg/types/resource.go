@@ -20,13 +20,13 @@ package types
 // 别人的段落原样放着不影响解析，缺自己那段才报错。
 type ResourceConfig struct {
 	// 全局设置。同名命令行标志优先于此处。
-	Offline       bool     `yaml:"offline"`
-	Debug         bool     `yaml:"debug"`
-	GithubProxy   string   `yaml:"github_proxy"`
-	WorkDir       string   `yaml:"workdir"`
-	MirrorsSource []string `yaml:"mirrors_source"`
+	Offline       bool              `yaml:"offline"`
+	Debug         bool              `yaml:"debug"`
+	GithubProxy   string            `yaml:"github_proxy"`
+	WorkDir       string            `yaml:"workdir"`
+	MirrorsSource []string          `yaml:"mirrors_source"`
+	Vars          map[string]string `yaml:"vars,omitempty"` // 自定义模板变量，模板里以 {{.Vars.xxx}} 访问
 
-	Proxy     string        `yaml:"proxy"` // 可选代理
 	Resources []Resource    `yaml:"resources,omitempty"`
 	Nodes     []RemoteNode  `yaml:"nodes"`
 	Clusters  []ClusterSpec `yaml:"cluster,omitempty"`

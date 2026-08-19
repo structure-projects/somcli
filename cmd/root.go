@@ -32,6 +32,7 @@ var (
 	debugMode   bool     // 新增debug模式标志
 	offline     bool     // 是否离线模式
 	source      []string // 镜像源，可逗号分隔或重复传
+	setVars     []string // --set k=v，覆盖配置里的 vars
 )
 var rootCmd = &cobra.Command{
 	Use:   "somcli",
@@ -43,9 +44,33 @@ Docker, Docker Compose, Docker Swarm and Kubernetes.`,
 		utils.SetDebugMode(debugMode)
 
 		utils.SetOffline(offline)
+
+		// --set 先于配置生效：applyGlobalSettings 读配置时只填 configVars 那一层，
+		// 覆盖层在这里一次装好，两层的优先级就与读取顺序无关了。
+		vars, err := parseSetVars(setVars)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		utils.SetOverrideVars(vars)
+
 		// 初始化配置必须在所有命令执行前完成
 		initConfig()
 	},
+}
+
+// parseSetVars 解析 --set k=v。
+// 拒绝没有 = 的写法而不是忽略：静默忽略等于用户以为传进去了，模板里却渲染成报错或空值。
+func parseSetVars(pairs []string) (map[string]string, error) {
+	vars := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		key, value, found := strings.Cut(pair, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("--set 需要 k=v 形式，收到 %q", pair)
+		}
+		vars[key] = value
+	}
+	return vars, nil
 }
 
 func Execute() {
@@ -77,6 +102,8 @@ func init() {
 	// 并打印一行"加载源 -> [false]"，而配置文件里真正的 mirrors_source 被它盖掉。
 	rootCmd.PersistentFlags().StringSliceVar(&source, "source", nil, "Mirror sources (comma-separated or multiple flags)")
 	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "enable 离线模式") // 新增debug标志 Mirror source
+	rootCmd.PersistentFlags().StringArrayVar(&setVars, "set", nil,
+		"Set a template variable, repeatable (e.g. --set port=8080). Overrides vars: in the config file")
 
 	// 绑定viper
 	viper.BindPFlag("github_proxy", rootCmd.PersistentFlags().Lookup("github-proxy"))

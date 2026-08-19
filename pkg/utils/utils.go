@@ -27,6 +27,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -44,7 +45,34 @@ import (
 var (
 	offlineMode bool // 是否离线模式
 
+	// 用户自定义模板变量，模板里以 {{.Vars.xxx}} 访问。
+	// 分两层存：--set 必须能覆盖配置里的 vars，而配置是在命令跑起来之后才读的，
+	// 合并成一个 map 就分不清哪个值来自哪一层了。
+	configVars   = map[string]string{}
+	overrideVars = map[string]string{}
 )
+
+// SetConfigVars 记录配置文件 vars: 段声明的变量。
+func SetConfigVars(vars map[string]string) {
+	configVars = vars
+}
+
+// SetOverrideVars 记录 --set k=v 传入的变量，优先级高于配置文件。
+func SetOverrideVars(vars map[string]string) {
+	overrideVars = vars
+}
+
+// TemplateVars 返回合并后的自定义变量：--set 覆盖配置文件。
+func TemplateVars() map[string]string {
+	merged := make(map[string]string, len(configVars)+len(overrideVars))
+	for k, v := range configVars {
+		merged[k] = v
+	}
+	for k, v := range overrideVars {
+		merged[k] = v
+	}
+	return merged
+}
 
 // GetHomeDir 获取用户主目录
 func GetHomeDir() string {
@@ -189,100 +217,87 @@ func NormalizeVersion(version string) string {
 	return version
 }
 
-// 公共解析
-func ParseStr(tmpl string, res types.Resource) (string, error) {
-	tpl, err := template.New("").Parse(tmpl)
+// TemplateContext 是模板可见的全部变量。
+//
+// 只有这一份：脚本上下文与 target/URL 上下文各自写一份结构体的时候，两份必然漂移 ——
+// {{.Filename}} 只在 target 里能用，写进 post_install 就报 "can't evaluate field"（E5）。
+//
+// url 为空时 Filename/Ext 退化到资源的第一个 URL。脚本上下文没有"当前 URL"的概念，
+// 但资源基本都只有一个 URL，在 post_install 里写 {{.Filename}} 的意图是明确的。
+func TemplateContext(res types.Resource, url string) map[string]any {
+	if url == "" && len(res.URLs) > 0 {
+		url = res.URLs[0]
+	}
+	name, ext := urlFilename(url)
 
+	return map[string]any{
+		"Name":        res.Name,
+		"Version":     res.Version,
+		"Platform":    GetPlatform(),
+		"Arch":        GetArch(),
+		"DownloadDir": GetDownloadDir(),
+		"AppDir":      GetAppDir(),
+		"HostDir":     GetHomeDir(),
+		"WorkDir":     GetWorkDir(),
+		"DataDir":     GetDataDir(),
+		"TmpDir":      GetTmpDir(),
+		"ImagesDir":   GetImagesDir(),
+		"ScriptDir":   GetScriptDir(),
+		"CacheDir":    filepath.Join(GetDownloadDir(), res.Name, res.Version),
+		"Filename":    name,
+		"Ext":         ext,
+		"Vars":        TemplateVars(),
+	}
+}
+
+// urlFilename 从下载地址里取文件名与扩展名。
+// query 与 fragment 必须先去掉：GitHub release 之类的地址常带 ?token=...，
+// 直接 filepath.Base 会把它算进文件名。
+func urlFilename(rawURL string) (name, ext string) {
+	if rawURL == "" {
+		return "", ""
+	}
+	trimmed := rawURL
+	if i := strings.IndexAny(trimmed, "?#"); i >= 0 {
+		trimmed = trimmed[:i]
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if trimmed == "" {
+		return "", ""
+	}
+	name = path.Base(trimmed)
+	return name, path.Ext(name)
+}
+
+// renderTemplate 用统一的上下文渲染一段模板。
+//
+// missingkey=error 是必须的：上下文改成 map 之后，text/template 默认把不存在的键渲染成
+// "<no value>" 而不是报错（结构体字段才会报错）。少了这个选项，{{.Workdir}} 这种大小写
+// 写错会静默产出 <no value>，产物落到谁也找不到的路径上 —— 正是 SC-F06 要挡的事。
+func renderTemplate(tmpl string, ctx map[string]any) (string, error) {
+	tpl, err := template.New("").Option("missingkey=error").Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
 
-	data := struct {
-		Name        string
-		Version     string
-		Platform    string
-		Arch        string
-		DownloadDir string
-		AppDir      string
-		HostDir     string
-		WorkDir     string
-		DataDir     string
-		TmpDir      string
-		ImagesDir   string
-		ScriptDir   string
-		CacheDir    string
-	}{
-		Name:        res.Name,
-		Version:     res.Version,
-		Platform:    GetPlatform(),
-		Arch:        GetArch(),
-		DownloadDir: GetDownloadDir(),
-		AppDir:      GetAppDir(),
-		HostDir:     GetHomeDir(),
-		WorkDir:     GetWorkDir(),
-		DataDir:     GetDataDir(),
-		TmpDir:      GetTmpDir(),
-		ImagesDir:   GetImagesDir(),
-		ScriptDir:   GetScriptDir(),
-		CacheDir:    filepath.Join(GetDownloadDir(), res.Name, res.Version),
-	}
-
 	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
+	if err := tpl.Execute(&buf, ctx); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+// ParseStr 渲染脚本、命令这类不绑定具体 URL 的模板。
+func ParseStr(tmpl string, res types.Resource) (string, error) {
+	return renderTemplate(tmpl, TemplateContext(res, ""))
+}
+
+// ParseTargetPath 渲染 target 模板，额外绑定当次下载的 URL（{{.Filename}} / {{.Ext}}）。
+func ParseTargetPath(tmpl, url string, res types.Resource) (string, error) {
+	return renderTemplate(tmpl, TemplateContext(res, url))
 }
 
 // --- 内部辅助函数 ---
-
-func ParseTargetPath(tmpl, url string, res types.Resource) (string, error) {
-
-	tpl, err := template.New("").Parse(tmpl)
-	if err != nil {
-		return "", err
-	}
-
-	data := struct {
-		Name        string
-		Version     string
-		Platform    string
-		Arch        string
-		DownloadDir string
-		AppDir      string
-		HostDir     string
-		WorkDir     string
-		DataDir     string
-		TmpDir      string
-		ImagesDir   string
-		ScriptDir   string
-		CacheDir    string
-		Filename    string
-		Ext         string
-	}{
-		Name:        res.Name,
-		Version:     res.Version,
-		Platform:    GetPlatform(),
-		Arch:        GetArch(),
-		DownloadDir: GetDownloadDir(),
-		AppDir:      GetAppDir(),
-		HostDir:     GetHomeDir(),
-		WorkDir:     GetWorkDir(),
-		DataDir:     GetDataDir(),
-		TmpDir:      GetTmpDir(),
-		ImagesDir:   GetImagesDir(),
-		ScriptDir:   GetScriptDir(),
-		CacheDir:    filepath.Join(GetDownloadDir(), res.Name, res.Version),
-		Filename:    filepath.Base(url),
-		Ext:         filepath.Ext(url),
-	}
-
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
 
 func SetEnv(name string, value string) {
 	err := os.Setenv(name, value)
@@ -340,6 +355,7 @@ func applyGlobalSettings(cfg *types.ResourceConfig) {
 	if len(cfg.MirrorsSource) > 0 {
 		InitSource(cfg.MirrorsSource)
 	}
+	SetConfigVars(cfg.Vars)
 }
 
 func SetNode(nodes []types.RemoteNode) {
