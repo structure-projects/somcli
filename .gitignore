@@ -28,3 +28,6 @@ go.work.sum
 
 # 默认工作目录：不传 --workdir 时安装产物会落在这里
 somwork/
+
+# multinode fixture 每次运行生成的一次性 SSH 密钥，绝不能提交
+test/fixtures/multinode/.ssh/

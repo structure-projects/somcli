@@ -1,0 +1,44 @@
+# 三节点 sshd 集群，供 test/multinode 使用。
+#
+# 固定 IP 而非映射端口：somcli 的 SSH 调用写死了 22 端口（SSHMCmd / CopyToRemote 都不带
+# -p），所以节点必须各自有一个能从宿主机直连 22 的地址。Linux 上 docker 网桥的容器 IP
+# 从宿主机可直达，因此这套 fixture 只在 Linux 上可用（CI 载体是 ubuntu-latest）。
+#
+# 起停由 test/multinode 的 TestMain 负责。
+services:
+  node-a:
+    build: .
+    container_name: somcli-node-a
+    hostname: node-a
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+    networks:
+      somcli:
+        ipv4_address: 172.28.0.11
+
+  node-b:
+    build: .
+    container_name: somcli-node-b
+    hostname: node-b
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+    networks:
+      somcli:
+        ipv4_address: 172.28.0.12
+
+  node-c:
+    build: .
+    container_name: somcli-node-c
+    hostname: node-c
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+    networks:
+      somcli:
+        ipv4_address: 172.28.0.13
+
+networks:
+  somcli:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
