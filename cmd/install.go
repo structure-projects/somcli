@@ -35,16 +35,17 @@ var (
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install system tools",
-	Long: `Supported installation methods:
-- package: Use system package manager (apt/yum)
-- binary:  Install pre-built binaries
-- source:  Compile from source code
-- container: Run as container`,
+	Long: `Install resources declared in a config file.
+
+Each resource is processed as: download urls -> distribute to hosts -> run
+pre_install -> run post_install. Everything a resource needs to do is written
+in those script lists; there is no built-in package/source/container dispatch,
+so the resource's ` + "`method`" + ` field is currently not consumed.`,
 	Example: `  # Batch install from config
-  somcli install -f configs/install.yaml
+  somcli install -f configs/tools.yaml
 
   # Install a single resource declared in the config
-  somcli install -f configs/install.yaml -n kubectl`,
+  somcli install -f configs/tools.yaml -n jq`,
 	Run: runInstall,
 }
 
