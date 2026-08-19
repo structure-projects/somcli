@@ -222,15 +222,25 @@ func runIn(t *testing.T, workdir string, args ...string) (int, string) {
 	return code, string(out)
 }
 
+// ssh 在节点上跑一条命令，只返回**标准输出**，stderr 折进 error。
+//
+// 两条流必须分开：ssh 自己会往 stderr 写 "Warning: Permanently added ... to the list of
+// known hosts."，而 UserKnownHostsFile=/dev/null 让这条警告每次连接都出现。合并输出的话
+// 它会被当成文件内容，"节点上的产物等于该节点主机名"这类断言全部落空。
 func ssh(n node, cmd string) (string, error) {
-	out, err := exec.Command("ssh",
+	c := exec.Command("ssh",
 		"-i", keyPath,
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		fmt.Sprintf("%s@%s", sshUser, n.ip),
-		cmd).CombinedOutput()
+		cmd)
+
+	out, err := c.Output()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return string(out), fmt.Errorf("%v: %s", err, exitErr.Stderr)
+	}
 	return string(out), err
 }
 

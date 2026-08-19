@@ -184,14 +184,24 @@ func remoteCleanup(t *testing.T, tg target, paths ...string) {
 	})
 }
 
+// ssh 在远端跑一条命令，只返回**标准输出**，stderr 折进 error。
+//
+// 两条流必须分开：ssh 往 stderr 写的 "Warning: Permanently added ..." 会被当成文件内容。
+// 这里目前碰不到那条警告（不禁 known_hosts，首连之后就不再提示），但依赖"警告恰好不出现"
+// 等于把断言的正确性交给运行顺序。
 func ssh(tg target, cmd string) (string, error) {
-	out, err := exec.Command("ssh",
+	c := exec.Command("ssh",
 		"-i", expand(tg.key),
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		fmt.Sprintf("%s@%s", tg.user, tg.ip),
-		cmd).CombinedOutput()
+		cmd)
+
+	out, err := c.Output()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return string(out), fmt.Errorf("%v: %s", err, exitErr.Stderr)
+	}
 	return string(out), err
 }
 
