@@ -176,13 +176,17 @@
 
 ## 归档（MUST 在推送前完成）
 
+> 实际顺序与标题相反：本提案自己改了 workflow 触发条件（评审 MUST-1），绿信号只能从
+> 推上远端的 feat 分支拿，于是真实次序是「推送 → 拿绿 → 置 done → 归档」。
+> 这个死锁的记账见 proposal.md「评审阶段补记」。
+
 - [x] `changes/changelog/0.2.0-alpha.md` 补条目，三项 BREAKING 单列（严格解析、退出码语义、`cluster:` 列表化）
-- [ ] `git mv changes/proposals/20260818-migrate-phase0-trusted-signal/ changes/archive/`
-- [ ] `changes/config.yaml` 的 `current-proposal` 切到 `20260818-migrate-phase1-engine-completion`
+- [x] `git mv changes/proposals/20260818-migrate-phase0-trusted-signal/ changes/archive/`
+- [x] `changes/config.yaml` 的 `current-proposal` 切到 `20260818-migrate-phase1-engine-completion`
 
 ## 提交与推送
 
-- [ ] 通过 ci-gate（归档 + commit-msg + 编译 + local 组用例）
-- [ ] commit message 符合 Conventional Commits
-- [ ] 分支为 `feat-arch-convergence`
-- [ ] 推送需用户确认
+- [x] 通过 ci-gate（`gofmt -l` 空、`go vet` 干净、local 组全绿、CI 与 Integration 两条流水线全绿）
+- [x] commit message 符合 Conventional Commits
+- [x] 分支为 `feat-arch-convergence`
+- [x] 推送经用户确认（用户定论"直接通过 gh 推送分支在远程分支跑 ci 流水线来验证"）

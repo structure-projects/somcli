@@ -7,7 +7,7 @@
 | 类型 | migration |
 | 创建日期 | 2026-08-18 |
 | 创建人 | chuck |
-| 状态 | review |
+| 状态 | archived（2026-08-19，两条流水线全绿后归档） |
 | 优先级 | high |
 | 总纲 | `changes/proposals/20260818-migrate-arch-convergence/proposal.md` |
 | 技术附录 | `doc/提案-架构收敛与测试体系.md` §4（缺陷基线）、§5.2 Phase 0 |
