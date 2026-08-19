@@ -714,10 +714,20 @@ scenarios:
 
   # 统一配置 schema 之后新增：一份文件必须在所有场景下都能加载，各命令只取自己那一段。
   # 改之前 install / cluster create / images 各认一套 schema，同一份文件换个场景就解析失败。
+  # desc 只写用例真断言到的三条命令：images --custom-file 读统一配置那半条要 docker，
+  # 本机与 local 组都跑不了，单独立为 SC-X10 而不是含在这条里当"已验证"。
   - id: SC-X09
-    desc: 同一份配置在 install / cluster / images 场景下都能加载，各取所需
+    desc: 同一份配置在 validate / install / cluster create 下都能加载，各取所需
     env: [local]
     files: [test/local/config_test.go]
     defects: [G9]
     phase: 0
     status: done
+
+  - id: SC-X10
+    desc: images --custom-file 认统一配置的 images 段 / 裸列表 / 纯文本 name:tag 三种写法
+    env: [cluster]
+    files: []
+    defects: [G9]
+    phase: 4
+    status: pending

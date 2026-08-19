@@ -313,6 +313,9 @@ resources:
 //   - install 只消费 resources，cluster: 与 images: 存在不影响它跑
 //   - cluster create 认得同一个文件里的 cluster:，且点名不存在的集群时列出候选
 //     （用不存在的名字，才能在不真去 SSH 装集群的前提下证明这一段被读到了）
+//
+// images --custom-file 读同一份文件那条不在这里：它要 docker 才跑得起来，
+// 见 SC-X10。宁可矩阵上少一条，也不要把没断言的东西写成 done。
 func TestSC_X09_OneConfigServesEveryScenario(t *testing.T) {
 	cfg := writeConfig(t, `
 debug: false
