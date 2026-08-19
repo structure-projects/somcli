@@ -132,11 +132,11 @@
 
 ## 测试
 
-- [ ] `go test ./...` 全绿（只含 local 组）
+- [x] `go test ./...` 全绿（只含 local 组）
 - [ ] `go test ./test/remote/... -tags=remote` 全绿（CI）
 - [ ] `go test ./test/multinode/... -tags=multinode` 全绿（CI）
-- [ ] `grep -rn "structure-projects/somcli" test/` 无结果
-- [ ] `grep -n "MIN_COVERAGE\|coverpkg" .github/workflows/ci.yml` 无结果
+- [x] `grep -rn '"github.com/structure-projects/somcli' test/` 无结果
+- [x] `grep -n "MIN_COVERAGE\|coverpkg" .github/workflows/ci.yml` 无结果
 
 ## 评审
 
