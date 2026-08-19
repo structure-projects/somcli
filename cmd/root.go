@@ -26,12 +26,12 @@ import (
 )
 
 var (
-	cfgFile     string // 配置信息
-	githubProxy string // github代理
-	workDir     string //工作目录
-	debugMode   bool   // 新增debug模式标志
-	offline     bool   // 是否离线模式
-	source      bool   //源
+	cfgFile     string   // 配置信息
+	githubProxy string   // github代理
+	workDir     string   //工作目录
+	debugMode   bool     // 新增debug模式标志
+	offline     bool     // 是否离线模式
+	source      []string // 镜像源，可逗号分隔或重复传
 )
 var rootCmd = &cobra.Command{
 	Use:   "somcli",
@@ -71,9 +71,12 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.somcli.yaml)")
 	rootCmd.PersistentFlags().StringVar(&githubProxy, "github-proxy", "", "GitHub proxy URL (e.g. https://gh-proxy.com/)")
 	rootCmd.PersistentFlags().StringVar(&workDir, "workdir", "", "working directory (default is ./somwork if exists, otherwise current directory)")
-	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode")                                // 新增debug标志
-	rootCmd.PersistentFlags().BoolVar(&source, "source", false, "Mirror sources (comma-separated or multiple flags)") //  Mirror source
-	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "enable 离线模式")                                      // 新增debug标志 Mirror source
+	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode") // 新增debug标志
+	// 帮助里一直写着"comma-separated or multiple flags"，类型却是 bool：绑到
+	// mirrors_source 后 GetStringSlice 读回 ["false"]，于是每条命令都白跑一次 InitSource
+	// 并打印一行"加载源 -> [false]"，而配置文件里真正的 mirrors_source 被它盖掉。
+	rootCmd.PersistentFlags().StringSliceVar(&source, "source", nil, "Mirror sources (comma-separated or multiple flags)")
+	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "enable 离线模式") // 新增debug标志 Mirror source
 
 	// 绑定viper
 	viper.BindPFlag("github_proxy", rootCmd.PersistentFlags().Lookup("github-proxy"))
@@ -113,9 +116,8 @@ func initConfig() {
 	}
 	verifyProxyConfig()
 
-	sourceList := viper.GetStringSlice("mirrors_source")
 	//初始化源
-	if source || len(sourceList) > 0 {
+	if sourceList := viper.GetStringSlice("mirrors_source"); len(sourceList) > 0 {
 		utils.InitSource(sourceList)
 	}
 
