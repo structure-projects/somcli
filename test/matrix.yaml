@@ -677,9 +677,9 @@ scenarios:
     desc: configs 下每个示例文件都能被解析并渲染
     env: [local]
     files: [test/local/config_test.go]
-    defects: [F2, G7]
+    defects: [F2, G7, D12, G9]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-X06
     desc: 失败时退出码非 0（可被 CI 与调用方感知）
@@ -708,3 +708,13 @@ scenarios:
     defects: [D10]
     phase: 1
     status: pending
+
+  # 统一配置 schema 之后新增：一份文件必须在所有场景下都能加载，各命令只取自己那一段。
+  # 改之前 install / cluster create / images 各认一套 schema，同一份文件换个场景就解析失败。
+  - id: SC-X09
+    desc: 同一份配置在 install / cluster / images 场景下都能加载，各取所需
+    env: [local]
+    files: [test/local/config_test.go]
+    defects: [G9]
+    phase: 0
+    status: done

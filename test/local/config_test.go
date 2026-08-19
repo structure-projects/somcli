@@ -165,6 +165,7 @@ func TestSC_X07_HelpHasNoSideEffects(t *testing.T) {
 	commands := [][]string{
 		{"--help"},
 		{"install", "--help"},
+		{"validate", "--help"},
 		{"download", "--help"},
 		{"version", "--help"},
 		{"apply", "--help"},
@@ -218,6 +219,185 @@ func TestSC_X07_HelpHasNoSideEffects(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSC_X05_ExampleConfigsAreValid configs/ 下每个示例配置都必须能被解析并渲染。
+//
+// 示例配置是大多数人的第一份输入，它错了就等于工具开箱即坏。审计时这里有三个文件
+// 谁都装不上：两个用的是 `kind:` 多文档 schema（加载器只读第一个文档，`---` 之后
+// 静默丢弃），一个引用了类型里不存在的字段。
+//
+// 判据用 `validate -f`：只解析、只渲染，不下载不执行 —— 否则验一遍示例配置就等于
+// 真去装一套 k8s。顺带对 workdir 与 HOME 做前后快照，validate 说自己只读，那就验它只读。
+func TestSC_X05_ExampleConfigsAreValid(t *testing.T) {
+	configs := exampleConfigs(t)
+	if len(configs) < 5 {
+		t.Fatalf("configs/ 下只找到 %d 个示例配置，路径或后缀变了", len(configs))
+	}
+
+	for _, cfg := range configs {
+		cfg := cfg
+		t.Run("SC-X05/"+filepath.Base(cfg), func(t *testing.T) {
+			workdir := t.TempDir()
+			home := t.TempDir()
+
+			before := tree(t, workdir)
+			code, out := runHelp(t, workdir, home, "validate", "-f", cfg)
+			if code != 0 {
+				t.Errorf("示例配置解析不了（退出码 %d），照着它改的人一开始就装不上：\n%s", code, out)
+			}
+			if after := tree(t, workdir); !reflect.DeepEqual(before, after) {
+				t.Errorf("validate 声称只读却动了 workdir：\n之前 %v\n之后 %v", before, after)
+			}
+		})
+	}
+}
+
+// TestSC_X05_ValidateRejectsBrokenConfig validate 不能是个只会说 ok 的橡皮章。
+func TestSC_X05_ValidateRejectsBrokenConfig(t *testing.T) {
+	cases := []struct {
+		name    string
+		wantKey string
+		cfg     string
+	}{
+		{
+			name:    "SC-X05/未知键",
+			wantKey: "postinstall",
+			cfg: `
+resources:
+  - name: tool
+    version: "1.0"
+    postinstall:
+      - "true"
+`,
+		},
+		{
+			name:    "SC-X05/模板变量不存在",
+			wantKey: "post_install",
+			cfg: `
+resources:
+  - name: tool
+    version: "1.0"
+    post_install:
+      - "echo {{.NoSuchVar}}"
+`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			workdir := t.TempDir()
+			cfg := writeConfig(t, tc.cfg)
+
+			code, out := runIn(t, workdir, "validate", "-f", cfg)
+			if code == 0 {
+				t.Fatalf("配置有问题却验过了，输出：\n%s", out)
+			}
+			if !strings.Contains(out, tc.wantKey) {
+				t.Errorf("错误信息没指出问题在 %q，输出：\n%s", tc.wantKey, out)
+			}
+		})
+	}
+}
+
+// TestSC_X09_OneConfigServesEveryScenario 一份配置要能在所有场景下加载，
+// 各命令只取自己那一段。
+//
+// 改之前不是这样：install 认 resources:，cluster create 认的是另一套以 cluster: 为根的
+// schema，images --custom-file 又是第三种。同一份文件换个场景就解析失败，严格解析之后
+// 更是直接报未知键 —— 于是用户被迫为同一套环境维护三份互相抄的配置。
+//
+// 判据取"同一个文件、三条命令、都认得"：
+//   - validate 报出的资源 / 节点 / 集群 / 镜像条数与文件里写的一致（四段都真解析到了）
+//   - install 只消费 resources，cluster: 与 images: 存在不影响它跑
+//   - cluster create 认得同一个文件里的 cluster:，且点名不存在的集群时列出候选
+//     （用不存在的名字，才能在不真去 SSH 装集群的前提下证明这一段被读到了）
+func TestSC_X09_OneConfigServesEveryScenario(t *testing.T) {
+	cfg := writeConfig(t, `
+debug: false
+resources:
+  - name: marker
+    version: "1.0"
+    post_install:
+      - "echo installed > {{.WorkDir}}/marker.txt"
+nodes:
+  - host: "local-a"
+    ip: "127.0.0.1"
+    role: "manager"
+cluster:
+  - type: "swarm"
+    name: "my-swarm"
+    nodes:
+      - host: "local-a"
+        ip: "127.0.0.1"
+        role: "manager"
+  - type: "k8s"
+    name: "my-k8s"
+    nodes:
+      - host: "local-a"
+        ip: "127.0.0.1"
+        role: "master"
+images:
+  - name: "busybox"
+    tag: "1.36"
+`)
+
+	t.Run("SC-X09/validate 四段都解析到", func(t *testing.T) {
+		code, out := runIn(t, t.TempDir(), "validate", "-f", cfg)
+		if code != 0 {
+			t.Fatalf("统一配置解析失败，退出码 = %d，输出：\n%s", code, out)
+		}
+		for _, want := range []string{"1 个资源", "1 个节点", "2 套集群", "1 个镜像"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("validate 没报出 %q，说明这一段没被解析到，输出：\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("SC-X09/install 只取 resources", func(t *testing.T) {
+		workdir := t.TempDir()
+		code, out := runIn(t, workdir, "install", "-f", cfg)
+		if code != 0 {
+			t.Fatalf("同一份配置装不了，退出码 = %d，输出：\n%s", code, out)
+		}
+		if got := strings.TrimSpace(readFile(t, filepath.Join(workdir, "marker.txt"))); got != "installed" {
+			t.Errorf("resources 没执行，产物 = %q", got)
+		}
+	})
+
+	t.Run("SC-X09/cluster create 认得同一个文件", func(t *testing.T) {
+		code, out := runIn(t, t.TempDir(), "cluster", "create", "-f", cfg, "--cluster-name", "no-such")
+		if code == 0 {
+			t.Fatalf("点名了不存在的集群却成功了，输出：\n%s", out)
+		}
+		// 报错必须列出候选，否则用户不知道该填什么。
+		for _, want := range []string{"my-swarm", "my-k8s"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("错误信息没列出候选集群 %q，输出：\n%s", want, out)
+			}
+		}
+	})
+}
+
+// exampleConfigs 列出 configs/ 下的 YAML 示例。不写死清单：新增示例应当自动被这条用例覆盖。
+
+func exampleConfigs(t *testing.T) []string {
+	t.Helper()
+
+	dir := filepath.Join(repoRoot, "configs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("读取 configs/ 失败: %v", err)
+	}
+
+	var configs []string
+	for _, e := range entries {
+		if name := e.Name(); strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+			configs = append(configs, filepath.Join(dir, name))
+		}
+	}
+	return configs
 }
 
 // runHelp 与 runIn 的区别只在于 HOME 由调用方指定，
