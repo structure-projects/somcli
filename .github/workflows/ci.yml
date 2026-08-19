@@ -39,9 +39,11 @@ jobs:
 
       # 功能验证一律黑盒：test/ 下只允许用 os/exec 跑编译出来的二进制。
       # 一旦有用例 import 本仓库的包，断言的就是内部实现而不是工具行为。
+      # 匹配带前引号的形式 —— import 路径一定带引号，注释里提到包名不算违规。
+      # 原先裸匹配包名，连"这里不 import 本仓库包"这句注释都会判违规，是个恒红的检查。
       - name: test 不得 import 本仓库包
         run: |
-          if grep -rn "structure-projects/somcli" test/; then
+          if grep -rn '"github.com/structure-projects/somcli' test/; then
             echo "test/ 下禁止 import 本仓库包：功能验证一律通过二进制黑盒进行"
             exit 1
           fi
