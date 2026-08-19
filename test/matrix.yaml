@@ -39,16 +39,16 @@ scenarios:
     phase: 0
     status: done
 
-  # SC-E03/E04/E05/E06 的用例已写好，但本机跑不动：remote 组要一个能免密登录的 sshd，
-  # multinode 组要 docker 与 Linux 网桥直连。判定留给 .github/workflows/integration.yml，
-  # 这条流水线绿了再改 done —— 与 SC-D01/D03/D04 同一处置。
+  # SC-E03/E04/E05/E06 本机跑不动：remote 组要一个能免密登录的 sshd，multinode 组要
+  # docker 与 Linux 网桥直连。判定由 .github/workflows/integration.yml 给出，
+  # 两个 job 在 CI 内硬失败而非跳过。2026-08-19 该流水线在 feat-arch-convergence 上全绿。
   - id: SC-E03
     desc: 单个远程节点安装
     env: [remote]
     files: [test/remote/dispatch_test.go]
     defects: [D1, D13]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E04
     desc: 多个远程节点安装同一资源
@@ -56,7 +56,7 @@ scenarios:
     files: [test/multinode/dispatch_test.go]
     defects: [D1]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E05
     desc: hosts 定向——资源只落到指定节点，其余节点无副作用（含负向断言）
@@ -64,7 +64,7 @@ scenarios:
     files: [test/multinode/dispatch_test.go]
     defects: [D1]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E06
     desc: 混合编排——资源 A 本机、资源 B 远程
@@ -72,7 +72,7 @@ scenarios:
     files: [test/multinode/dispatch_test.go]
     defects: [D1]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-E07
     desc: 按名称安装单个资源（install -n）
@@ -204,15 +204,17 @@ scenarios:
     status: pending
 
   # ---------- SC-D 下载与产物 ----------
-  # SC-D01/D03/D04 用例已写好，但下载器直接 exec wget（无 curl / net/http 回退），
-  # 本机没有 wget 就只能 skip，绿的判定留给 Linux 流水线。M1 修下载器后本机也能跑。
+  # SC-D01/D03/D04 只在带 wget 的操作机上跑：下载器直接 exec wget，没有 curl / net/http
+  # 回退（F5 欠账）。macOS 默认无 wget，那格 skip；Linux 上缺 wget 改为硬失败，
+  # 所以 Linux 那格绿就等于这三条真的跑了。2026-08-19 ci.yml 在 ubuntu / ubuntu-arm 全绿。
+  # M1 修下载器（改走 net/http）后 macOS 与开发机也能跑。
   - id: SC-D01
     desc: 在线下载 + checksum 校验通过
     env: [local]
     files: [test/local/download_test.go]
     defects: []
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-D02
     desc: checksum 不符则失败并删除残留文件
@@ -228,7 +230,7 @@ scenarios:
     files: [test/local/download_test.go]
     defects: [F4, G8]
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-D04
     desc: 相对路径 target
@@ -236,7 +238,7 @@ scenarios:
     files: [test/local/download_test.go]
     defects: []
     phase: 0
-    status: pending
+    status: done
 
   - id: SC-D05
     desc: 绝对路径 target 的 LocalPath 正确

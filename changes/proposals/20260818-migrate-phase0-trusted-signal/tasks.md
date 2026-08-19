@@ -61,17 +61,21 @@
 - [x] `template_test.go` SC-E13：脚本上下文渲染变量并回显到文件后断言；F1 回归改为让 `'` 与 `&`
       出现在**值**里（workdir 路径与资源名）—— 原先拿字面量 `'a&b<c>d'` 测是假绿，html/template
       只转义插值结果，不动模板字面量，缺陷版本上那条断言照样通过
-- [ ] `template_test.go` SC-E13 余下部分：URL / target 两处上下文（依赖下载器，与 SC-D0x 一同待 CI）
+- [ ] `template_test.go` SC-E13 余下部分：URL / target 两处上下文
+      → 结转 M1。它要断言的是"模板变量在 URL 与 target 里也渲染"，而这两处都在下载器
+      那条路径上，M1 本来就要把下载器从 exec wget 改成 net/http 重写一遍。
+      本里程碑不勾：CI 绿证明的是 SC-D01/D03/D04，不含这一条。
 - [x] `template_test.go` SC-F06：配置写 `{{.NoSuchVar}}` → 退出码非 0，错误含变量名
 - [x] `node_resolve_test.go` SC-F01：声明 node-a，`hosts: [node-x]` → 退出码非 0、错误含 `node-x`、**本机与 workdir 无任何副作用**（D1 回归）
 - [x] `failure_test.go` SC-F04：`pre_install` 退出 3 → 非 0 退出、`post_install` 标记文件不存在、输出无 `[SUCCESS]`
 - [x] `failure_test.go` SC-F02：`nodes` 指向 `192.0.2.1`（TEST-NET-1 保证不可达）→ 错误信息含节点名 / 用户 / IP
       （耗时 30s，等的是 somcli 自己的 `ConnectTimeout=30`，已 `t.Parallel()`）
-- [~] `download_test.go` SC-D01：`httptest` 起本地源 + 正确 checksum → 产物落盘、内容一致
-- [~] `download_test.go` SC-D03：源返回 500 → 退出码非 0、输出无 `[SUCCESS]`（F4/G8 回归）
-- [~] `download_test.go` SC-D04：相对 / 绝对 `target` 两种语义各自落位
-      上面三条已写好，但本机无 `wget` 时 `t.Skip`（F5：下载器 shell out 到 wget，无回退）
-      → `status` 留 `pending`，待 Linux CI 实跑确认后再置 done
+- [x] `download_test.go` SC-D01：`httptest` 起本地源 + 正确 checksum → 产物落盘、内容一致
+- [x] `download_test.go` SC-D03：源返回 500 → 退出码非 0、输出无 `[SUCCESS]`（F4/G8 回归）
+- [x] `download_test.go` SC-D04：相对 / 绝对 `target` 两种语义各自落位
+      上面三条在无 `wget` 的机器上 `t.Skip`（F5：下载器 shell out 到 wget，无回退），
+      但 Linux 上缺 wget 改为**硬失败** —— 否则 `ci.yml` 不带 `-v`，日志里"跳过"和"通过"
+      长得一模一样，这三条等于永远不会红的空壳。ubuntu / ubuntu-arm 两格绿即证明真跑了。
 - [x] `workdir_test.go` SC-X01：两次不同 `--workdir` → 产物各自隔离；仓库目录无 `somwork` 新增（快照对比）
       判据取"本次运行前后仓库侧无变化"而非"somwork 不存在"，否则开发机上遗留的 somwork 会误报
 - [x] `config_test.go` SC-X05：`configs/` 下每个示例经 `somcli validate -f` 校验 —— 断言退出码 0，且
@@ -112,7 +116,7 @@
 - [x] 用 `$SSH_CONNECTION` 作判据：自连接时文件系统是共享的，"远端有文件"证不了走了 SSH
 - [x] 顺带修 D13：`sshKey` 的 `~` 只在 `RunCommandOnNode` 展开，`scp`/`ssh` 那几个入口拿的是原样字符串 → 照示例配置写的人分发一律失败
 - [x] CI 内 SSH 自连接准备步骤（`ssh-keygen` + `authorized_keys` + 可达自检）
-- [ ] `test/matrix.yaml` 将 SC-E03 置 done（等 integration 流水线绿）
+- [x] `test/matrix.yaml` 将 SC-E03 置 done（integration 流水线已绿）
 
 ## M0.5 multinode 组（SC-E04 / SC-E05 / SC-E06）
 
@@ -121,7 +125,13 @@
 - [x] `dispatch_test.go` SC-E04：多节点同一资源 → 每个节点都有产物（比对各自 `/etc/hostname`，防"三次都跑在同一台"蒙过）
 - [x] `dispatch_test.go` SC-E05：`hosts` 定向 —— **目标节点有文件 且 未点名节点与操作机都没有**（D1 终极回归）
 - [x] `dispatch_test.go` SC-E06：混合本机 / 远程编排，两个方向都断言
-- [ ] `test/matrix.yaml` 将 SC-E04/E05/E06 置 done（等 integration 流水线绿）
+- [x] `test/matrix.yaml` 将 SC-E04/E05/E06 置 done（integration 流水线已绿）
+- [x] 修掉用例自己的 ssh helper：它用 `CombinedOutput`，而 `UserKnownHostsFile=/dev/null`
+      让 ssh 每次连接都往 stderr 写 `Warning: Permanently added ...`，读回的"产物内容"
+      于是变成 `Warning: ...\r\nnode-a`。三条用例首轮 CI 全红，红的不是 somcli
+      （日志显示三节点各自执行、`hosts` 定向只命中 node-b、混排两个方向都对），
+      是用例自己。改为只取 stdout，stderr 折进 error；remote 组同一处一并改
+      （那边不禁 known_hosts，首连之后不再提示，恰好是绿的 —— 等于把断言正确性交给运行顺序）
 
 ## M0.6 流水线
 
@@ -131,13 +141,15 @@
 - [x] 两个 workflow 的 `push.branches` 加 `feat-*` / `fix-*`，`ci.yml` 补 `workflow_dispatch`
       （评审 MUST-1：原先只在 master/develop 上触发，feat 分支推上去不跑任何 job，
       而"归档在推送前"又要求先拿到绿信号 —— 构成死锁。用户定论走"改触发条件"）
-- [ ] 确认 `ci.yml` 三操作机矩阵（ubuntu / ubuntu-arm / macos）上 local 组全绿
+- [x] 确认 `ci.yml` 三操作机矩阵（ubuntu / ubuntu-arm / macos）上 local 组全绿
+- [x] 修掉 `configs/config.yaml` 缺文件尾换行（`new-line-at-end-of-file` 在 relaxed
+      规则里是 error 而非 warning，静态检查因此红）；`line-length` 警告不动
 
 ## 测试
 
 - [x] `go test ./...` 全绿（只含 local 组）
-- [ ] `go test ./test/remote/... -tags=remote` 全绿（CI）
-- [ ] `go test ./test/multinode/... -tags=multinode` 全绿（CI）
+- [x] `go test ./test/remote/... -tags=remote` 全绿（CI run 32251103809）
+- [x] `go test ./test/multinode/... -tags=multinode` 全绿（CI run 32251103809）
 - [x] `grep -rn '"github.com/structure-projects/somcli' test/` 无结果
 - [x] `grep -n "MIN_COVERAGE\|coverpkg" .github/workflows/ci.yml` 无结果
 

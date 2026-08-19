@@ -11,7 +11,7 @@
 | 优先级 | high |
 | 总纲 | `changes/proposals/20260818-migrate-arch-convergence/proposal.md` |
 | 技术附录 | `doc/提案-架构收敛与测试体系.md` §4（缺陷基线）、§5.2 Phase 0 |
-| 场景 | 22 个（`test/matrix.yaml` 中 `phase: 0`），当前 15 done / 7 pending（余 7 条载体在 CI） |
+| 场景 | 24 个（`test/matrix.yaml` 中 `phase: 0`），24 done / 0 pending |
 | 评审 | `review.md`（⚠️ 有条件通过，2 MUST / 5 SHOULD 已全部处理） |
 
 > 本里程碑是所有后续工作的前置。在 `RunScripts` 吞错与 `SetNode` 断链修好之前，
@@ -96,16 +96,36 @@ SC-X09 那条尤其值得记：矩阵是人工维护的唯一事实来源，一�
 
 ### 本里程碑剩余范围
 
-代码与用例已全部写完，剩下的只有"拿到 CI 的绿信号"这一步 —— 7 个场景的载体不在开发机上：
+代码与用例已全部写完，7 个场景的载体不在开发机上，判定交给 CI：
 
-| 场景 | 载体 | 为什么本机验不了 |
-|---|---|---|
-| SC-E03 单个远程节点安装 | `test/remote/dispatch_test.go`（tag `remote`） | 需要一个能连的 SSH 目标；开发机通常没开 sshd，macOS 还得先给 lo0 加回环别名 |
-| SC-E04/E05/E06 多远程节点 / `hosts` 定向 / 混合编排 | `test/multinode/`（tag `multinode`）+ 3 节点 sshd 容器 | 需要 docker；本机 `docker` 命令不存在 |
-| SC-D01/D03/D04 下载与 target 路径 | `test/local/download_test.go` | 下载器 shell out 到 `wget`，无 curl 回退也未用 `net/http`（F5）；本机无 wget，用例显式 `t.Skip` 并说明原因 |
+| 场景 | 载体 | 为什么本机验不了 | 结果 |
+|---|---|---|---|
+| SC-E03 单个远程节点安装 | `test/remote/dispatch_test.go`（tag `remote`） | 需要一个能连的 SSH 目标；开发机通常没开 sshd，macOS 还得先给 lo0 加回环别名 | ✅ 绿 |
+| SC-E04/E05/E06 多远程节点 / `hosts` 定向 / 混合编排 | `test/multinode/`（tag `multinode`）+ 3 节点 sshd 容器 | 需要 docker；本机 `docker` 命令不存在 | ✅ 绿 |
+| SC-D01/D03/D04 下载与 target 路径 | `test/local/download_test.go` | 下载器 shell out 到 `wget`，无 curl 回退也未用 `net/http`（F5）；无 wget 时 `t.Skip` | ✅ 绿（ubuntu / ubuntu-arm） |
 
-`test/matrix.yaml` 里这 7 条一律留 `pending`。**MUST NOT 在拿到绿信号前先置 `done`** ——
-那会让矩阵重新变成"自己说自己通过了"的东西，正是本里程碑要消灭的。
+2026-08-19 在 `feat-arch-convergence` 上两条流水线全绿（CI run 32251103753、
+Integration run 32251103809），7 条随即置 `done`。此前一律留 `pending` —— 提前置 `done`
+会让矩阵重新变成"自己说自己通过了"的东西，正是本里程碑要消灭的。
+
+首轮 CI 红了两处，都不是 somcli：
+
+1. **multinode 三条全红，红的是用例自己。** ssh helper 用 `CombinedOutput`，而
+   `UserKnownHostsFile=/dev/null` 让 ssh 每次连接都往 stderr 写
+   `Warning: Permanently added ...`，读回的"产物内容"于是成了 `Warning: ...\r\nnode-a`。
+   somcli 的行为在日志里是对的：三节点各自执行、`hosts` 定向只命中 node-b、混排两个方向都对。
+   改为只取 stdout；remote 组同一处一并改（那边不禁 known_hosts，首连后不再提示，
+   恰好是绿的 —— 等于把断言正确性交给运行顺序）。
+2. **静态检查红在 yamllint。** `configs/config.yaml` 缺文件尾换行，
+   `new-line-at-end-of-file` 在 relaxed 规则里是 error 而非 warning。
+
+顺带补了一处"跳过冒充通过"：SC-D01/D03/D04 在无 wget 时 `t.Skip`，而 `ci.yml` 不带 `-v`，
+日志里跳过与通过长得一模一样。改为 **Linux 上缺 wget 硬失败**（macOS 仍 skip，那里确实没有
+wget，也正是 F5 欠账本身），于是 Linux 那两格绿就等于这三条真的跑了。
+
+**结转 M1**：`template_test.go` 的 SC-E13 余下部分（URL / target 两处模板上下文）没有写，
+本次也不勾 —— 这两处都在下载器那条路径上，而 M1 本来就要把下载器从 exec wget 改成 `net/http`
+重写一遍。CI 绿证明的是 SC-D01/D03/D04，不含这一条。
 
 其中 **SC-E05 的负向断言是 D1 的终极回归**：断言文件出现在目标节点、且**不出现在运行 somcli 的操作机**上，直接封死"误装在操作机"复现的可能。
 
@@ -118,7 +138,7 @@ SC-X09 那条尤其值得记：矩阵是人工维护的唯一事实来源，一�
 - `hosts` 引用未声明的节点 → 明确报错，绝不兜底到本机执行；
 - 配置含未知字段 / 重复键 → 拒绝而非静默忽略；
 - `--workdir` 一改，全部派生目录随之改变，不再往仓库里写 `somwork`；
-- `test/matrix.yaml` 中 22 个 `phase: 0` 场景全部 `status: done`，且每条都由跑二进制的用例承载。
+- `test/matrix.yaml` 中 24 个 `phase: 0` 场景全部 `status: done`，且每条都由跑二进制的用例承载。
 
 工程侧：`test/` 只剩 `local`/`remote`/`multinode` 三个包，`go test ./...` 默认只跑 `local` 且保持秒级。
 
@@ -164,7 +184,7 @@ SC-X09 那条尤其值得记：矩阵是人工维护的唯一事实来源，一�
 | M0.3 | `local` 组黑盒用例（13 个回退场景 + SC-E01/E02/E07/X04） | 每条用例在缺陷未修版本上能复现失败 |
 | M0.4 | `remote` 组（SC-E03） | CI runner 对自身 SSH，走真实 `scp` 分发与远程执行路径 |
 | M0.5 | `multinode` 组（SC-E04/E05/E06） | 3 个 systemd-enabled sshd 容器；`hosts` 定向的负向断言通过 |
-| M0.6 | `integration.yml` 落地 | 22 个场景 done，两条流水线全绿 |
+| M0.6 | `integration.yml` 落地 | 24 个场景 done，两条流水线全绿 |
 
 ## 风险评估
 
@@ -206,13 +226,12 @@ SC-X09 那条尤其值得记：矩阵是人工维护的唯一事实来源，一�
 
 ## 验收标准
 
-- [ ] `test/matrix.yaml` 中 22 个 `phase: 0` 场景全部 `status: done`，每条 `files` 指向的用例真实存在
-      （15 done / 7 pending：SC-E03/E04/E05/E06 与 SC-D01/D03/D04 的载体只在 CI，
-      待 `integration.yml` 与 Linux 上的 local 组跑绿后置 done —— **MUST NOT 在拿到绿信号前先勾**）
+- [x] `test/matrix.yaml` 中 24 个 `phase: 0` 场景全部 `status: done`，每条 `files` 指向的用例真实存在
+      （2026-08-19 两条流水线全绿后置 done：CI run 32251103753、Integration run 32251103809）
 - [x] `test/` 下无任何 `github.com/structure-projects/somcli` import（CI 守卫生效）
 - [x] `ci.yml` 中不存在 `MIN_COVERAGE` / `-coverpkg`
 - [x] `gofmt -l .` 为空；`go vet ./...` 干净
-- [ ] SC-E05 负向断言通过：目标节点有文件、操作机无文件（D1 不可能复现）（用例已写，待 CI）
+- [x] SC-E05 负向断言通过：目标节点有文件、未点名节点与操作机都没有（D1 不可能复现）
 - [x] 任意失败路径退出码非 0 且输出无 `[SUCCESS]`（D2/F4/G8 不可能复现）
 - [x] `somcli <任意命令> --help` 前后文件树快照一致（D9）
 - [x] 文档中出现的每条命令与标志，在二进制上 `--help` 可验证存在（SC-X04）
