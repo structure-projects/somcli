@@ -92,7 +92,7 @@ func SSHExecWithOutput(user, host, keyPath, command string) error {
 // getSSHConfig 创建SSH客户端配置
 func getSSHConfig(user, keyPath string) (*ssh.ClientConfig, error) {
 	// 读取私钥文件
-	key, err := os.ReadFile(keyPath)
+	key, err := os.ReadFile(ExpandPath(keyPath))
 	if err != nil {
 		return nil, fmt.Errorf("unable to read private key: %v", err)
 	}
@@ -115,7 +115,7 @@ func getSSHConfig(user, keyPath string) (*ssh.ClientConfig, error) {
 
 // SSHClient 创建SSH客户端连接
 func SSHClient(user, host, keyPath string) (*ssh.Client, error) {
-	key, err := os.ReadFile(keyPath)
+	key, err := os.ReadFile(ExpandPath(keyPath))
 	if err != nil {
 		return nil, fmt.Errorf("unable to read private key: %w", err)
 	}
@@ -142,6 +142,10 @@ func SSHClient(user, host, keyPath string) (*ssh.Client, error) {
 }
 
 func CopyToRemote(user, ip, keyPath, localPath, remotePath string) error {
+	// 示例配置一律写 ~/.ssh/id_rsa，而 scp / ssh 是被 exec 直接拉起的，没有 shell 帮忙展开 ~，
+	// 不在这里展开就等于对所有人分发都失败。
+	keyPath = ExpandPath(keyPath)
+
 	// 检查文件是否存在
 	exists, err := RemoteFileExists(user, ip, keyPath, remotePath)
 	if err != nil {
@@ -208,7 +212,7 @@ func SSHMCmd(user, ip, keyPath, cmd string) (string, error) {
 
 	// 构建 SSH 命令
 	sshArgs := []string{
-		"-i", keyPath,
+		"-i", ExpandPath(keyPath),
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "ConnectTimeout=30",
 		fmt.Sprintf("%s@%s", user, ip),
@@ -260,7 +264,7 @@ func RsyncCopy(keyPath, localPath, user, ip, remotePath string) error {
 	}
 
 	// SSH配置（保持与SCP相同的安全设置）
-	sshOpts := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no", keyPath)
+	sshOpts := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no", ExpandPath(keyPath))
 	args = append(args, "--rsh="+sshOpts)
 
 	// 添加路径参数
