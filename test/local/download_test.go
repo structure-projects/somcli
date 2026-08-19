@@ -23,18 +23,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 // requireDownloader 下载器是 shell out 到 wget 实现的，既没有 curl 回退也没走 net/http。
-// macOS 默认不带 wget，这里显式跳过并说明原因 —— 与其让用例在开发机上假绿，
-// 不如把这个依赖摊开：它是 M1「下载器修正」要处理的事。
+//
+// macOS 默认不带 wget，那里跳过是"环境确实不具备"（这正是 F5 欠账本身）。但 Linux 操作机
+// 一定带 wget，在那儿跳过只能是准备步骤坏了 —— 必须硬失败，否则 CI 日志里"跳过"与"通过"
+// 长得一模一样，SC-D01/D03/D04 就成了永远不会红的空壳。
 func requireDownloader(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("wget"); err != nil {
-		t.Skip("下载器依赖 wget（无 curl 回退、未用 net/http），本机没有 wget，跳过；M1 修正下载器后本条恢复")
+	if _, err := exec.LookPath("wget"); err == nil {
+		return
 	}
+	if os.Getenv("CI") != "" && runtime.GOOS == "linux" {
+		t.Fatal("Linux 操作机上找不到 wget：这不是环境不具备，而是 CI 准备步骤坏了")
+	}
+	t.Skipf("下载器依赖 wget（无 curl 回退、未用 net/http），本机 %s 没有 wget，跳过；"+
+		"M1 修正下载器后本条恢复", runtime.GOOS)
 }
 
 // fileServer 起一个本地 HTTP 源，返回 URL 与内容的 sha256。
