@@ -86,7 +86,7 @@
       为把逐目标失败隔离穿到 method 阶段；顺带让代码与 M1.2 已写下的设计一致
 - [x] 黑盒用例：`test/local/{idempotency,state,onerror}_test.go`、`test/multinode/{parallel,onerror}_test.go`
       local 17 条已在 `91110e6` 上证伪（16 红 1 绿，归因见提案）；
-      multinode 5 条本机无 docker，只做了推断，待 CI 复核
+      multinode 5 条本机无 docker，绿的一半由 CI 复核（`82fcd78` 全绿），红的一半仍是推断
 
 ## M1.4 子系统修复
 

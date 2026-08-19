@@ -57,7 +57,7 @@ jobs:
         run: go test -tags=remote ./test/remote/... -count=1 -v -timeout 15m
 
   multinode:
-    name: 多节点编排 (SC-E04/E05/E06)
+    name: 多节点编排 (SC-E04/E05/E06/E14/E15/E16/F05)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -136,7 +136,7 @@ scenarios:
     files: [test/multinode/parallel_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E15
     desc: on_error abort / continue 行为
@@ -144,7 +144,7 @@ scenarios:
     files: [test/local/onerror_test.go, test/multinode/onerror_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E16
     desc: 状态记录与查询——哪个节点装了什么版本
@@ -152,7 +152,7 @@ scenarios:
     files: [test/local/state_test.go, test/multinode/onerror_test.go]
     defects: [E4]
     phase: 1
-    status: pending
+    status: done
 
   # ---------- SC-M 安装方式 ----------
   - id: SC-M01
@@ -340,7 +340,7 @@ scenarios:
     files: [test/multinode/onerror_test.go]
     defects: [D2, E4]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-F06
     desc: 模板引用不存在的变量则明确报错

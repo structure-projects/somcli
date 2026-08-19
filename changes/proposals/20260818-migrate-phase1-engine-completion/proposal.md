@@ -337,30 +337,36 @@ is-active containerd` —— 全都是**成功表示东西已经在了**。照�
 本就遇错即 return。它锁的是"引入 `on_error` 之后默认行为没变"，按定义不可证伪，
 与 SC-M05 同属兼容性守卫。
 
-### M1.3：multinode 五条用例的证伪只做了推断，未在本机执行
+### M1.3：multinode 五条用例的证伪只做了推断，红绿由远程 CI 复核
 
 `test/multinode/{parallel,onerror}_test.go` 需要 docker 与 Linux 网桥直连，本机无 docker，
-`TestMain` 会整包跳过。红绿只能由 `.github/workflows/integration.yml` 在远程验证。
+`TestMain` 会整包跳过。
 
 按已在 local 组实测到的事实（`91110e6` 上 `--parallel` 是 unknown flag、`on_error` /
 `check` 是未知字段）可以推断：SC-E14 两条属"被新标志混淆"，SC-E15 多节点半边属
 "被新字段混淆"，SC-E16 逐节点记账属干净的 E4 红；而 SC-F05 默认 abort 那条在旧版大概也绿
 （旧版 `RunScripts` 遇到第一个失败节点即 return），属兼容性守卫。
 
-推断不等于证伪。CI 跑完后若与上述不符，回来改这一节。
+**绿的一半已由 CI 复核**：`82fcd78` 的 integration 流水线上五条全绿
+（`ok test/multinode 57.080s`），其中 `TestSC_E14_ParallelMatchesSerial` 耗时 18.58s ——
+串行约 13s、`--parallel 3` 约 5s，"并发确实压缩了挂钟时间"这条判据是真的过了，
+不是因为断言写松了。
 
-### M1.3：四个场景暂不置 done —— 代码交付了，但那半边从未被执行过
+**红的一半仍是推断**：在 `91110e6` 上跑 multinode 组需要单独开一条 CI 分支，
+本里程碑没做。上面的归因分类因此是推理而非实测，若后续有人跑出不同结果，改这一节。
 
-本里程碑只把 SC-E08 / SC-E09 / SC-F08 置为 `done`（纯 local，本机实测绿）。
-SC-E14 / SC-F05（纯 multinode）与 SC-E15 / SC-E16（跨 local + multinode）保持 `pending`，
-尽管代码与用例都已交付。
+### M1.3：四个场景的 done 等到 CI 绿了才置
 
-理由是"done"这个字在本仓库里的含义：用例跑绿了。这四条的 multinode 半边本机跑不了，
-现在置 done 等于用"我认为它会绿"冒充"它绿了"—— 正是 M0 要清掉的那类不可信信号。
-CI 的 integration 流水线跑绿之后单独提交把它们翻过来。
+本里程碑提交时只把 SC-E08 / SC-E09 / SC-F08 置为 `done`（纯 local，本机实测绿）。
+SC-E14 / SC-F05（纯 multinode）与 SC-E15 / SC-E16（跨 local + multinode）当时保持 `pending`，
+尽管代码与用例都已交付 —— 因为"done"在本仓库里的含义是用例跑绿了，
+本机跑不了就置 done 等于用"我认为它会绿"冒充"它绿了"，正是 M0 要清掉的那类不可信信号。
 
-连带影响：M1.3 的完成标准「SC-E08/E09/E14/E15/E16、SC-F05/F08 done」实际是
-E08/E09/F08 done，其余四条待 CI。累计 done 数 42（M1.2 后 39），CI 绿后为 46。
+`82fcd78` 的 integration 流水线绿之后，这四条已翻为 `done`。累计 done 数 46。
+
+顺带把 integration 流水线里 multinode 作业的名字从「SC-E04/E05/E06」补成
+「SC-E04/E05/E06/E14/E15/E16/F05」：作业名是别人判断"这条流水线守着什么"的唯一线索，
+名字落后于内容，等于让人以为新加的四个场景没有载体。
 
 ## 双规范并存期约定
 
