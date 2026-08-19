@@ -159,10 +159,16 @@ func installDocker(config *types.ClusterConfig, hosts []string) error {
 	dockerVersion := config.Cluster.K8sConfig.DockerVersion
 
 	// 定义Docker资源
+	//
+	// 本文件里所有资源的 method 都是 script：解压、install、chmod、systemctl 全写在
+	// post_install 里，method 字段过去零消费，写 "binary"/"package" 只是自我描述。
+	// 分发实现之后再挂着那两个值就会与脚本撞车（binary 再装一遍、package 去装一个叫
+	// base-dependencies 的包）。这是 method 分发落地时的最小适配，
+	// 真正改造成 method: binary / package 由 M2 集群编排一起做。
 	dockerResource := types.Resource{
 		Name:    "docker",
 		Version: dockerVersion,
-		Method:  "binary",
+		Method:  "script",
 		URLs: []string{
 			"https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz",
 		},
@@ -202,7 +208,7 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 	cniResource := types.Resource{
 		Name:    "containerd",
 		Version: config.Cluster.K8sConfig.CniPluginsVersion,
-		Method:  "binary",
+		Method:  "script",
 		URLs: []string{
 			"https://github.com/containernetworking/plugins/releases/download/v{{.Version}}/cni-plugins-linux-amd64-v{{.Version}}.tgz",
 		},
@@ -221,7 +227,7 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 	runcResource := types.Resource{
 		Name:    "runc",
 		Version: config.Cluster.K8sConfig.RuncVersion,
-		Method:  "binary",
+		Method:  "script",
 		URLs: []string{
 			"https://github.com/opencontainers/runc/releases/download/v{{.Version}}/runc.amd64",
 		},
@@ -240,7 +246,7 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 	containerdResource := types.Resource{
 		Name:    "containerd",
 		Version: config.Cluster.K8sConfig.ContainerdVersion,
-		Method:  "binary",
+		Method:  "script",
 		URLs: []string{
 			"https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-amd64.tar.gz",
 		},
@@ -274,7 +280,7 @@ func installK8sComponents(config *types.ClusterConfig, hosts []string) error {
 	k8sResource := types.Resource{
 		Name:    "kubernetes",
 		Version: k8sVersion,
-		Method:  "binary",
+		Method:  "script",
 		URLs: []string{
 			"https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubeadm",
 			"https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubelet",
@@ -448,7 +454,7 @@ func installBaseDependencies(config *types.ClusterConfig, hosts []string) error 
 	baseDeps := types.Resource{
 		Name:        "base-dependencies",
 		Version:     "",
-		Method:      "package",
+		Method:      "script",
 		PostInstall: commands,
 		Hosts:       hosts,
 	}

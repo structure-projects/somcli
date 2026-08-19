@@ -1,0 +1,73 @@
+/*
+Copyright 2023 Structure Projects
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+package installer
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/structure-projects/somcli/pkg/types"
+)
+
+// packageManagers 按优先级排列的包管理器与其"装一个包"的写法。
+//
+// 探测写在生成的 shell 里而不是 Go 里：装包要发生在**目标节点**上，
+// 操作机上有什么包管理器与目标节点无关。在 Go 侧用 exec.LookPath 探测，
+// 一到远程就是错的 —— 而这条错误路径在单机用例里永远不会暴露。
+var packageManagers = []struct {
+	bin string
+	cmd string
+}{
+	{"apt-get", "DEBIAN_FRONTEND=noninteractive apt-get install -y %s"},
+	{"dnf", "dnf install -y %s"},
+	{"yum", "yum install -y %s"},
+	{"zypper", "zypper --non-interactive install %s"},
+	{"apk", "apk add --no-cache %s"},
+	{"brew", "brew install %s"},
+}
+
+// installPackage 实现 method: package —— 交给目标机器上的发行版包管理器。
+func installPackage(res types.Resource) error {
+	pkg := res.Package
+	if pkg == "" {
+		pkg = res.Name
+	}
+	if pkg == "" {
+		return fmt.Errorf("method: package 需要 package: 或 name: 指明包名")
+	}
+
+	var b strings.Builder
+	for i, pm := range packageManagers {
+		if i > 0 {
+			b.WriteString("el")
+		}
+		fmt.Fprintf(&b, "if command -v %s >/dev/null 2>&1; then %s; ",
+			pm.bin, fmt.Sprintf(pm.cmd, shellQuote(pkg)))
+	}
+	// 一个都没有就必须失败：默认"装上了"而实际什么都没发生是 E1 的病症
+	fmt.Fprintf(&b, "else echo '未找到可用的包管理器（尝试过 %s）' >&2; exit 1; fi",
+		strings.Join(managerNames(), " / "))
+
+	return runMethodScripts(res, []string{b.String()})
+}
+
+func managerNames() []string {
+	names := make([]string, 0, len(packageManagers))
+	for _, pm := range packageManagers {
+		names = append(names, pm.bin)
+	}
+	return names
+}

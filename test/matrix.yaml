@@ -104,7 +104,7 @@ scenarios:
     files: [test/local/uninstall_test.go]
     defects: [E2]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E11
     desc: extra_files 渲染落盘（内容、权限、父目录创建）
@@ -112,7 +112,7 @@ scenarios:
     files: [test/local/extrafiles_test.go]
     defects: [D3]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-E12
     desc: 用户自定义变量 vars 与 --set k=v 覆盖
@@ -161,8 +161,11 @@ scenarios:
     files: [test/local/method_test.go]
     defects: [E1]
     phase: 1
-    status: pending
+    status: done
 
+  # local 半边已交付（PATH 注入会记录参数的假 apt-get / yum，断言命令真的发出去了、
+  # 且优先级表按优先级短路）；matrix 半边"在真实发行版上真装一次包"还缺发行版容器矩阵，
+  # 以及"somcli 该不该自己 sudo"这个未决问题，故整条仍为 pending。
   - id: SC-M02
     desc: "method: package 经发行版包管理器安装"
     env: [local, matrix]
@@ -177,7 +180,7 @@ scenarios:
     files: [test/local/method_test.go]
     defects: [E1]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-M04
     desc: "method: source 拉源码编译安装"
@@ -185,7 +188,7 @@ scenarios:
     files: [test/local/method_test.go]
     defects: [E1]
     phase: 1
-    status: pending
+    status: done
 
   - id: SC-M05
     desc: "method: script 执行脚本"
@@ -193,8 +196,10 @@ scenarios:
     files: [test/local/method_test.go]
     defects: []
     phase: 1
-    status: pending
+    status: done
 
+  # M1.2 已在 test/local/method_test.go 放了一条占位守卫：method: manifest 必须报
+  # "尚未实现"而不是被当成未知取值 —— 用户会以为自己拼错了。真正的 kubectl apply 在 M2。
   - id: SC-M06
     desc: "method: manifest 对集群 kubectl apply"
     env: [cluster]

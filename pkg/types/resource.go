@@ -46,9 +46,12 @@ type Resource struct {
 	PreInstall    []string          `yaml:"pre_install"`    //检测脚本
 	PostInstall   []string          `yaml:"post_install"`   // 安装脚本
 	RemoveScripts []string          `yaml:"remove_scripts"` //卸载脚本
-	Method        string            `yaml:"method"`         // 安装方法
-	ExtraFiles    map[string]string `yaml:"ExtraFiles"`     // 扩展文件
-	Files         []string          `yaml:"files"`          //文件路径
+	Method        string            `yaml:"method"`         // 安装方法：script（默认）/ binary / package / container / source
+	Package       string            `yaml:"package"`        // method: package 的包名，留空取 name
+	InstallDir    string            `yaml:"install_dir"`    // method: binary / container 的落地目录，留空取 /usr/local/bin
+	Build         []string          `yaml:"build"`          // method: source 的构建命令，在解压出的源码目录里执行
+	ExtraFiles    map[string]string `yaml:"extra_files"`    // 附加文件：目标路径 -> 内容，两者都过模板
+	Files         []string          `yaml:"files"`          // method: binary 时指定归档内要安装的文件，留空则安装归档里所有可执行文件
 }
 
 // DownloadResult 下载结果

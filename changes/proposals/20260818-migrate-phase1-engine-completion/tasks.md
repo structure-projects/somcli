@@ -33,17 +33,34 @@
 
 ## M1.2 method 分发 / extra_files / uninstall
 
-- [ ] E1：`method` 分发骨架，一种 method 一个文件（`pkg/installer/method_*.go`）
-- [ ] `method: script`（SC-M05）→ 现有行为收敛为显式语义
-- [ ] `method: binary`（SC-M01）→ 解压 + 放置可执行文件 + chmod
-- [ ] `method: package`（SC-M02）→ 调用发行版包管理器（探测抽象在 M3 完善，本里程碑先支持 yum/apt）
-- [ ] `method: container`（SC-M03）→ 消费 `Resource.Image`
-- [ ] `method: source`（SC-M04）→ 拉源码编译
-- [ ] 补 `Resource.Package` 字段，`source_url` 统一到 `urls`
-- [ ] D3：`extra_files` 渲染落盘（内容 / 权限 / 父目录创建），struct tag 改 `extra_files`（SC-E11）
-- [ ] E2：新增 `cmd/uninstall.go`，`somcli uninstall -f <file>` 逆序执行 `remove_scripts`（SC-E10）
-- [ ] `configs/tools.yaml` 改为三种 method 的可运行实战样例（kubectl / helm / jq）
-- [ ] 黑盒用例：`test/local/{method,extrafiles,uninstall,vars}_test.go`
+- [x] E1：`method` 分发骨架，一种 method 一个文件（`pkg/installer/method_*.go`）
+      方法本身不 exec，只把动作编译成命令列表交给 `utils.RunScripts` —— 远程执行、
+      日志、失败传播只有一处实现，M1.3 的 `--parallel` / `on_error` 自动共享。
+      认不出的 method 必须报错并列出可用值（静默当脚本跑正是 E1 的病症）
+- [x] `method: script`（SC-M05）→ 现有行为收敛为显式语义
+      与不写 `method` 行为一致，作为兼容性守卫；此条按定义无法在旧版本上证伪
+- [x] `method: binary`（SC-M01）→ 解压 + 放置可执行文件 + chmod
+      新增 `install_dir`（缺省 `/usr/local/bin`）与 `files`（归档内筛选，留空装所有可执行文件）
+- [x] `method: package`（SC-M02）→ 调用发行版包管理器
+      优先级表 apt-get / dnf / yum / zypper / apk / brew，探测写在生成的 shell 里而非
+      Go 的 `LookPath` —— 判断必须发生在目标节点上。**local 半边完成，matrix 半边未兑现，
+      故 SC-M02 仍为 pending**，理由见「执行期偏差记账」
+- [x] `method: container`（SC-M03）→ 消费 `Resource.Image`
+      不止拉镜像：在 `install_dir` 生成同名包装脚本，脚本自己探测 docker / podman
+- [x] `method: source`（SC-M04）→ 拉源码编译
+      新增 `build:`，缺了直接报错（不猜构建方式：猜错的代价是"报告装好了、其实什么都没编出来"）
+- [x] 补 `Resource.Package` 字段，~~`source_url` 统一到 `urls`~~ → `source` 直接读 `urls`，无 `source_url` 字段可迁
+- [x] D3：`extra_files` 渲染落盘（内容 / 权限 / 父目录创建），struct tag 改 `extra_files`（SC-E11）
+      权限定死 0644；先在缓存目录落暂存件再 `install` 就位，远程走与下载产物完全相同的分发路径
+- [x] E2：`somcli uninstall -f <file>` 逆序执行 `remove_scripts`（SC-E10）
+      入口加在 `cmd/install.go` 而非新建 `cmd/uninstall.go`：与 install 共用 `-f`/`-n` 标志与错误措辞
+- [x] `configs/tools.yaml` 改为三种 method 的可运行实战样例（kubectl / helm / jq）
+      `method: manifest` 明确报"尚未实现"，与未知 method 分开报（它是路线图上的合法取值）
+- [x] `pkg/cluster/kubernetes.go` 六处 `Method` 最小适配为 `script`
+      那六个资源的动作都在自己的 `post_install` 里，分发一旦生效会二次安装 / 装不存在的包
+- [x] 黑盒用例：`test/local/{method,extrafiles,uninstall}_test.go`（`vars_test.go` 属 M1.1）
+      27 条用例，在 M1.1 提交 `43c6769` 上 26 红 1 绿；红的归因分三类，见「执行期偏差记账」
+- [ ] 遗留：SC-M02 的 matrix 半边（真实发行版上真装一次包）
 
 ## M1.3 幂等 / 状态 / 并发 / 容错
 

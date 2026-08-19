@@ -26,10 +26,12 @@ import (
 )
 
 var (
-	installConfigFile string
-	installToolName   string
-	downloadConfig    string
-	quiet             bool
+	installConfigFile   string
+	installToolName     string
+	uninstallConfigFile string
+	uninstallToolName   string
+	downloadConfig      string
+	quiet               bool
 )
 
 var installCmd = &cobra.Command{
@@ -37,10 +39,16 @@ var installCmd = &cobra.Command{
 	Short: "Install system tools",
 	Long: `Install resources declared in a config file.
 
-Each resource is processed as: download urls -> distribute to hosts -> run
-pre_install -> run post_install. Everything a resource needs to do is written
-in those script lists; there is no built-in package/source/container dispatch,
-so the resource's ` + "`method`" + ` field is currently not consumed.`,
+Each resource is processed as: download urls -> distribute to hosts -> render
+extra_files -> run pre_install -> apply method -> run post_install.
+
+The ` + "`method`" + ` field selects how the resource is actually installed:
+
+  script     (default) the pre_install / post_install scripts are the install
+  binary     unpack the artifact if needed, install executables into install_dir
+  package    hand the package name to the target machine's package manager
+  container  pull image and drop a wrapper script named after the resource
+  source     unpack the source archive into {{.SrcDir}} and run build:`,
 	Example: `  # Batch install from config
   somcli install -f configs/tools.yaml
 
@@ -49,10 +57,31 @@ so the resource's ` + "`method`" + ` field is currently not consumed.`,
 	Run: runInstall,
 }
 
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstall resources by running their remove_scripts",
+	Long: `Run the remove_scripts of resources declared in a config file.
+
+Resources are processed in reverse declaration order, so things are torn down
+before whatever they depend on. A resource without remove_scripts is skipped
+with a warning.`,
+	Example: `  # Uninstall everything declared in the config
+  somcli uninstall -f configs/tools.yaml
+
+  # Uninstall a single resource
+  somcli uninstall -f configs/tools.yaml -n jq`,
+	Run: runUninstall,
+}
+
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().StringVarP(&installConfigFile, "file", "f", "", "Installation config file path")
 	installCmd.Flags().StringVarP(&installToolName, "name", "n", "", "Only install the resource with this name")
+
+	rootCmd.AddCommand(uninstallCmd)
+	uninstallCmd.Flags().StringVarP(&uninstallConfigFile, "file", "f", "", "Config file path (required)")
+	uninstallCmd.Flags().StringVarP(&uninstallToolName, "name", "n", "", "Only uninstall the resource with this name")
+	uninstallCmd.MarkFlagRequired("file")
 
 	rootCmd.AddCommand(downloadCmd)
 
@@ -60,6 +89,22 @@ func init() {
 	downloadCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Quiet mode")
 
 	downloadCmd.MarkFlagRequired("file")
+}
+
+func runUninstall(cmd *cobra.Command, args []string) {
+	inst := installer.NewInstaller()
+
+	if uninstallToolName != "" {
+		if err := inst.UninstallTool(uninstallConfigFile, uninstallToolName, quiet); err != nil {
+			fmt.Fprintf(os.Stderr, "Uninstall %s failed: %v\n", uninstallToolName, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := inst.UninstallFromFile(uninstallConfigFile, quiet); err != nil {
+		fmt.Fprintf(os.Stderr, "Uninstall failed: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func runInstall(cmd *cobra.Command, args []string) {

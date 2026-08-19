@@ -229,6 +229,7 @@ func TemplateContext(res types.Resource, url string) map[string]any {
 		url = res.URLs[0]
 	}
 	name, ext := urlFilename(url)
+	cacheDir := filepath.Join(GetDownloadDir(), res.Name, res.Version)
 
 	return map[string]any{
 		"Name":        res.Name,
@@ -243,11 +244,24 @@ func TemplateContext(res types.Resource, url string) map[string]any {
 		"TmpDir":      GetTmpDir(),
 		"ImagesDir":   GetImagesDir(),
 		"ScriptDir":   GetScriptDir(),
-		"CacheDir":    filepath.Join(GetDownloadDir(), res.Name, res.Version),
+		"CacheDir":    cacheDir,
+		"InstallDir":  InstallDir(res),
+		"SrcDir":      filepath.Join(cacheDir, "src"),
 		"Filename":    name,
 		"Ext":         ext,
 		"Vars":        TemplateVars(),
 	}
+}
+
+// InstallDir 是 method: binary / container 把产物放到哪儿。
+//
+// 缺省 /usr/local/bin：PATH 里的惯例位置，也正是现有配置的 post_install 手写的目标。
+// 用例里改成工作目录下的 bin 就不需要 root。
+func InstallDir(res types.Resource) string {
+	if res.InstallDir != "" {
+		return res.InstallDir
+	}
+	return "/usr/local/bin"
 }
 
 // urlFilename 从下载地址里取文件名与扩展名。

@@ -103,7 +103,7 @@
 | 维度 | 说明 |
 |---|---|
 | CLI | 新增 `somcli uninstall`、`--set`、`--parallel`、`status`；`registry uninstall` 新增自身标志；`delete` 新增 `-n`。均为新增，无删除 |
-| 配置 | `extra_files` 的 struct tag 由 `ExtraFiles` 改为 `extra_files`（原 tag 本就与所有示例不匹配，无实际用户）；新增 `vars`、`check`、`on_error` 均为可选字段 |
+| 配置 | `extra_files` 的 struct tag 由 `ExtraFiles` 改为 `extra_files`（原 tag 本就与所有示例不匹配，无实际用户）；新增 `vars`、`check`、`on_error`、`install_dir`、`build`、`files` 均为可选字段 |
 | 配置 | **BREAKING**：删除顶层 `proxy:` 键，`download` 改与 `install` 同读 `github_proxy`。风险与回滚见「执行期偏差记账」D14 |
 | 行为 | **BREAKING**：`method` 从"全部等价于跑脚本"变为按语义分发，依赖旧行为的配置需显式写 `method: script` |
 | 缓存 | compose 缓存目录名修正，旧目录失效 |
@@ -164,6 +164,69 @@ M1 这边只欠 remote 组的 SC-F03 用例，无代码改动。
 `phase: 0` 的 done 数也不是提案原文推算的 22 而是 24（M0 执行期新增了两条）。
 验收标准的计数已按 28 / 52 更正。
 
+### M1.2：每种 method 都编译成 shell 命令交给 `RunScripts`
+
+提案没写 method 怎么落地。实施时定的规矩是：方法本身不 exec，只生成命令列表。
+于是"本机执行还是逐节点远程执行"只有 `utils.RunScripts` 一处实现，日志前缀、失败传播、
+以及 M1.3 要加的 `--parallel` / `on_error` 全部自动共享。
+各方法自己 exec 的话，每加一种 method 就要重写一遍远程分支，而那些分支没有任何用例会走到 ——
+正是 E1/F5 这类"写了但从没生效"的来源。
+
+直接后果：包管理器与容器运行时的**探测写在生成的 shell 里**（`if command -v apt-get …`），
+不是 Go 侧的 `exec.LookPath`。判断必须发生在目标节点上，操作机上有什么与目标节点无关；
+而这条错误在单机用例里永远不会暴露。
+
+### M1.2：新增三个字段 `install_dir` / `build` / `files`
+
+提案的「兼容性保证」只列了 `vars` / `check` / `on_error` 三个新字段，实施时又多了三个，均为可选：
+
+- `install_dir`：`method: binary` / `container` 的落地目录，缺省 `/usr/local/bin`。没有它就只能写死 `/usr/local/bin`，用例与无 root 环境都没法用；
+- `build`：`method: source` 的构建命令。有意不猜构建方式（不去试 `./configure` / `make` / `cargo`）—— 猜错的代价是"报告装好了、其实什么都没编出来"，而 `build:` 写两行就说清了。缺 `build:` 直接报错；
+- `files`：`method: binary` 时指定归档内要装哪几个可执行文件，留空则装所有带可执行位的文件。一个 tar 里带几十个文件是常态（containerd 的发布包），全装进 PATH 会污染环境。
+
+`extra_files` 的权限定为 0644，不做成字段：现有全部用法都是配置文件（daemon.json、
+containerd.service），需要可执行的场合写 `method: binary` 或在 `post_install` 里 chmod。
+
+### M1.2：`method: manifest` 明确报"未实现"，与未知 method 分开
+
+`manifest` 是路线图上的合法取值（随集群编排在 M2 落地）。混进"未知的 method"里报错，
+会让用户以为自己拼错了、反复去查文档。
+
+### M1.2：`pkg/cluster/kubernetes.go` 的六处 `Method` 全部改为 `script`
+
+按「双规范并存期约定」的最小适配。这六个资源真正的动作都写在自己的 `post_install` 里
+（手写 tar / install / 包管理器命令），`method` 过去零消费所以是纯自我描述。
+分发一旦生效，留着 `binary` 会二次安装，留着 `package` 会去装一个叫 `base-dependencies` 的
+不存在的包。真正改成用引擎能力实施留给 M2。
+
+### M1.2：SC-M02 的 `matrix` 半边未兑现，场景保持 pending
+
+`test/matrix.yaml` 给 SC-M02 声明的 env 是 `[local, matrix]`，承载文件含
+`.github/workflows/integration.yml`。本里程碑只交付了 local 半边（PATH 注入假 `apt-get`，
+断言"命令有没有发出去、发的对不对"，且优先级表真的按优先级短路）。
+
+真实发行版上跑一次真装包还缺两样东西：多发行版容器矩阵，以及"somcli 该不该自己 sudo"这个
+未决的设计问题（生成的命令目前不带 sudo，非 root 直接失败）。两样都超出 M1.2，
+所以 SC-M02 保持 `pending`，与 remote 组的 SC-D10 / SC-F03 一并记在 `tasks.md` 的遗留项里。
+连带影响：M1.2 的完成标准「SC-M01..M05 done」实际是 M01/M03/M04/M05 done，M02 待补。
+
+### M1.2：证伪归因 —— 新用例里有 5 条是"字段不存在"的红
+
+在 M1.1 提交（`43c6769`）上跑 M1.2 的 27 条用例，26 红 1 绿。红的归因分三类，
+不能一概当作 E1 被证伪：
+
+- **干净的 E1 红**（配置在旧版本上解析得动，跑完打印 `[SUCCESS] 成功安装!` 而什么都没发生）：
+  SC-M02 两条、SC-M03 缺 image、SC-M04 缺 build、SC-M05 未知 method 两格、SC-M06、SC-M01 缺 urls。
+  这类红就是 E1 的病症本身，也是 E1 的证伪主力；
+- **被新字段混淆的红**（报 `field install_dir not found` / `field build not found`）：
+  SC-M01 三条正向、SC-M03 正向、SC-M04 正向。红是真的，但归因是"字段那时还不存在"，
+  不足以单独证明分发生效 —— 好在 E1 已由上一类独立证伪，不靠这五条；
+- **就是缺陷本身的红**：SC-E10 全组报 `unknown command "uninstall"`（E2 = 没有入口），
+  SC-E11 全组报 `field extra_files not found`（D3 = struct tag 与所有示例不匹配）。
+
+唯一在旧版本上绿的是 SC-M05「`method: script` 与不写 `method` 行为一致」——
+它锁的正是旧行为，按定义无法证伪，属兼容性守卫而非缺陷回归。
+
 ## 双规范并存期约定
 
 - 老代码：`pkg/cluster/kubernetes.go` 本里程碑不重构（M2 处理），仅在其消费引擎新能力时做最小适配。
@@ -179,7 +242,7 @@ M1 这边只欠 remote 组的 SC-F03 用例，无代码改动。
 
 ## 验收标准
 
-- [ ] `test/matrix.yaml` 中 28 个 `phase: 1` 场景全部 done，累计 52 done（当前 33）
+- [ ] `test/matrix.yaml` 中 28 个 `phase: 1` 场景全部 done，累计 52 done（M1.1 后 33，M1.2 后 39）
 - [ ] 21 个叶子命令中 `🕳` 与 `❌` 计数为 0
 - [ ] `configs/tools.yaml` 能真实装出 kubectl / helm / jq 三者
 - [ ] install → uninstall 后环境干净（黑盒断言）

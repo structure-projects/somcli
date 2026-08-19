@@ -1,25 +1,51 @@
+# 工具编排示例：三种 method 各一例，可直接跑
+#
+#   somcli install -f configs/tools.yaml            # 全装
+#   somcli install -f configs/tools.yaml -n jq      # 只装 jq
+#   somcli uninstall -f configs/tools.yaml          # 逆序卸载
+#
+# install_dir 缺省是 /usr/local/bin，写入需要 root。不想用 sudo 就换个目录：
+#   somcli --set bin=$HOME/bin install -f configs/tools.yaml
+vars:
+  # 三个资源共用的落地目录，一处改掉
+  bin: "/usr/local/bin"
+
 resources:
+  # method: binary —— 下载裸二进制，install 到 install_dir 并置 0755。
+  # 归档（tar.gz / zip）会先解开，用 files: 指定要装哪几个可执行文件。
   - name: "kubectl"
+    version: "1.28.0"
     method: "binary"
+    install_dir: "{{.Vars.bin}}"
     urls:
-      - "https://storage.googleapis.com/kubernetes-release/release/v1.28.0/bin/linux/amd64/kubectl"
+      - "https://dl.k8s.io/release/v{{.Version}}/bin/{{.Platform}}/{{.Arch}}/kubectl"
+    target: "{{.Filename}}"
     post_install:
-      - "chmod +x /usr/local/bin/kubectl"
-    pre_install:
-      - "echo download $test"
-    hosts:
-      - "127.0.0.1"
+      - "{{.Vars.bin}}/kubectl version --client"
+    remove_scripts:
+      - "rm -f {{.Vars.bin}}/kubectl"
+
+  # method: container —— 拉镜像 + 在 install_dir 生成同名包装脚本，
+  # 之后直接敲 helm 即可，脚本自己找 docker / podman。
   - name: "helm"
-    method: "container" # 容器类型前提是先安装了容器
-    image: "alpine/helm:3.12.0"
-    hosts:
-      - "127.0.0.1"
+    version: "3.12.0"
+    method: "container"
+    install_dir: "{{.Vars.bin}}"
+    image: "alpine/helm:{{.Version}}"
+    post_install:
+      - "{{.Vars.bin}}/helm version"
+    remove_scripts:
+      - "rm -f {{.Vars.bin}}/helm"
+
+  # method: package —— 交给目标机器上的包管理器，包名缺省取 name
   - name: "jq"
     method: "package"
-    hosts:
-      - "127.0.0.1"
-nodes:
-  - host: "tools"
-    ip: "127.0.0.1"
-    role: "manager"
-    sshKey: "~/.ssh/id_rsa"
+    post_install:
+      - "jq --version"
+    remove_scripts:
+      - "if command -v apt-get >/dev/null 2>&1; then apt-get remove -y jq;
+         elif command -v dnf >/dev/null 2>&1; then dnf remove -y jq;
+         elif command -v yum >/dev/null 2>&1; then yum remove -y jq;
+         elif command -v apk >/dev/null 2>&1; then apk del jq;
+         elif command -v brew >/dev/null 2>&1; then brew uninstall jq;
+         else echo '未找到包管理器，jq 未卸载' >&2; exit 1; fi"
