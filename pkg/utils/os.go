@@ -62,6 +62,24 @@ func GetArchitecture() string {
 	}
 }
 
+// GetUnameArch 返回 uname -m 风格的架构名（x86_64 / aarch64 / i386）。
+//
+// 与 {{.Arch}}（Go 的 GOARCH：amd64 / arm64）并存不是冗余：release 资产命名两派都有 ——
+// kubectl 用 amd64，docker compose 用 x86_64。少了这个变量，URL 里就只能硬编码架构，
+// 而硬编码的 x86_64 正是 compose 安装器在 arm64 机器上装不上的原因（F13）。
+func GetUnameArch() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	case "386":
+		return "i386"
+	default:
+		return runtime.GOARCH
+	}
+}
+
 func GetDistroInfo() map[string]string {
 	distroInfo := make(map[string]string)
 

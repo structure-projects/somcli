@@ -236,6 +236,7 @@ func TemplateContext(res types.Resource, url string) map[string]any {
 		"Version":     res.Version,
 		"Platform":    GetPlatform(),
 		"Arch":        GetArch(),
+		"UnameArch":   GetUnameArch(),
 		"DownloadDir": GetDownloadDir(),
 		"AppDir":      GetAppDir(),
 		"HostDir":     GetHomeDir(),
@@ -379,8 +380,8 @@ func SetNode(nodes []types.RemoteNode) {
 // LocalNodeIP 标识"在操作机本地执行"的节点。
 const LocalNodeIP = "127.0.0.1"
 
-// isLocalHostLiteral 判断 hosts 条目是否为显式的本机字面量。
-func isLocalHostLiteral(hostname string) bool {
+// IsLocalHostLiteral 判断 hosts 条目是否为显式的本机字面量。
+func IsLocalHostLiteral(hostname string) bool {
 	switch hostname {
 	case "localhost", "127.0.0.1", "::1":
 		return true
@@ -400,7 +401,7 @@ func GetNode(hostname string) (types.RemoteNode, error) {
 		}
 	}
 
-	if isLocalHostLiteral(hostname) {
+	if IsLocalHostLiteral(hostname) {
 		return types.RemoteNode{Host: hostname, IP: LocalNodeIP}, nil
 	}
 

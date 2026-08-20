@@ -53,6 +53,8 @@ func Import(config Config) error {
 	}
 	defer os.RemoveAll(tempDir)
 
+	var failed failures
+	loaded := 0
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -84,10 +86,15 @@ func Import(config Config) error {
 
 		logrus.Infof("Loading image from: %s", header.Name)
 
+		loaded++
 		if err := utils.RunCommand("docker", "load", "-i", tempFile); err != nil {
-			logrus.Warnf("Failed to load image from %s: %v", header.Name, err)
+			failed.add(fmt.Sprintf("load %s", header.Name), err)
 			continue
 		}
+	}
+
+	if err := failed.err("import", loaded); err != nil {
+		return err
 	}
 
 	logrus.Infof("Images imported from: %s", inputPath)

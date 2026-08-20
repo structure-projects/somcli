@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -32,10 +33,14 @@ import (
 
 // 常量定义
 const (
-	defaultInstallPath  = "/usr/local/bin/docker-compose"                                                                         // 默认安装路径
-	downloadTemplateUrl = "https://github.com/docker/compose/releases/download/v{{.Version}}/docker-compose-{{.Platform}}-x86_64" // 下载模板URL
-	applicationName     = "docker-comopose"                                                                                       // 应用名称
-	defaultVersion      = "2.24.0"                                                                                                // 默认版本
+	defaultInstallPath = "/usr/local/bin/docker-compose" // 默认安装路径
+	applicationName    = "docker-compose"                // 应用名称（缓存目录用它，拼错就换一个目录）
+	defaultVersion     = "2.24.0"                        // 默认版本
+
+	// downloadTemplateUrl 用 {{.UnameArch}} 而不是硬编码 x86_64：
+	// docker compose 的 release 资产按 uname -m 命名（x86_64 / aarch64），
+	// 硬编码等于在 arm64 机器上必然 404（F13）
+	downloadTemplateUrl = "https://github.com/docker/compose/releases/download/v{{.Version}}/docker-compose-{{.Platform}}-{{.UnameArch}}"
 )
 
 // Installer 结构体用于管理 Docker Compose 的安装和卸载
@@ -62,10 +67,19 @@ func (i *Installer) SetInstallPath(path string) {
 }
 
 // Install 安装 Docker Compose
+//
+// 走 method: binary —— 下载、落盘、chmod、失败传播都用 installer 那一套，
+// compose 这边不再有自己的一条平行实现（原实现丢掉了 installer.Install 的返回值，
+// 于是"下载失败"也照样打印安装成功，且从没往 installPath 放过任何东西：D8/F13）
 func (i *Installer) Install(version string) error {
+	if version == "" {
+		version = defaultVersion
+	}
+	// URL 模板自带 v，入参写 v2.24.0 或 2.24.0 都得能用
+	version = strings.TrimPrefix(version, "v")
+
 	utils.PrintStage("开始安装 Docker Compose, 版本: %s", version)
 
-	// 1. 检查是否已安装
 	if i.isInstalled() {
 		if !i.silent {
 			utils.PrintInfo("Docker Compose 已安装在 %s", i.installPath)
@@ -73,43 +87,57 @@ func (i *Installer) Install(version string) error {
 		return nil
 	}
 
-	// 使用统一的下载管理器
-	utils.PrintInfo("开始下载 Docker Compose")
-	// downloader := utils.NewDownloader(i.Config.GetString("github_proxy"))
-	dockerComposeResource := types.Resource{
-		Name:        applicationName,
-		Version:     defaultVersion,
-		URLs:        []string{downloadTemplateUrl},
-		Target:      "{{.Name}}",
-		PreInstall:  []string{"chmod +x {{}}"},
-		PostInstall: []string{"chmod +x {{}}"},
+	// Target 取安装路径的文件名：缓存里的名字就是最终落地的名字，
+	// 否则装出来的会是 docker-compose-linux-x86_64
+	res := types.Resource{
+		Name:       applicationName,
+		Version:    version,
+		URLs:       []string{downloadTemplateUrl},
+		Target:     filepath.Base(i.installPath),
+		Method:     "binary",
+		InstallDir: filepath.Dir(i.installPath),
 	}
 
-	// result := installer.DownloadSingleFile(downloader, dockerComposeResource, downloadTemplateUrl)
+	if err := installer.NewInstaller().Install(res, i.silent); err != nil {
+		utils.PrintError("安装 Docker Compose 失败: %v", err)
+		return fmt.Errorf("failed to install docker-compose: %w", err)
+	}
 
-	installer := installer.NewInstaller()
-	installer.Install(dockerComposeResource, i.silent)
+	if err := i.verify(version); err != nil {
+		utils.PrintError("校验 Docker Compose 安装结果失败: %v", err)
+		return err
+	}
 
-	// if err := utils.CopyFile(result.LocalPath, i.installPath); err != nil {
-	// 	utils.PrintError("安装 Docker Compose 失败: %v", err)
-	// 	return fmt.Errorf("failed to install docker-compose: %v", err)
-	// }
+	if !i.silent {
+		utils.PrintSuccess("Docker Compose %s 成功安装到 %s", version, i.installPath)
+	}
+	return nil
+}
 
-	// if err := os.Chmod(i.installPath, 0755); err != nil {
-	// 	utils.PrintError("设置可执行权限失败: %v", err)
-	// 	return fmt.Errorf("failed to set executable permissions: %v", err)
-	// }
+// verify 确认装出来的东西真的在那儿、真的能跑、真的是要的那个版本。
+//
+// 缺了这一步，"报告成功但产物不存在"这类错就只能等用户下次执行 compose 命令时才暴露。
+func (i *Installer) verify(want string) error {
+	if !utils.IsExecutable(i.installPath) {
+		return fmt.Errorf("安装后 %s 不存在或没有可执行权限", i.installPath)
+	}
 
-	// if !i.silent {
-	// 	utils.PrintSuccess("Docker Compose %s 成功安装到 %s", version, i.installPath)
-	// }
+	got, err := i.Version()
+	if err != nil {
+		return fmt.Errorf("安装后无法执行 %s: %w", i.installPath, err)
+	}
+
+	if strings.TrimPrefix(got, "v") != want {
+		return fmt.Errorf("安装后版本不符：期望 %s，实际 %s", want, got)
+	}
 	return nil
 }
 
 // Uninstall 卸载 Docker Compose
 func (i *Installer) Uninstall() error {
 	utils.PrintStage("开始卸载 Docker Compose")
-	if !i.isInstalled() {
+	// 判据用"文件存在"而不是 isInstalled：装坏了（存在但没有可执行位）也得能清掉
+	if !utils.FileExists(i.installPath) {
 		if !i.silent {
 			utils.PrintInfo("Docker Compose 未安装")
 		}
@@ -187,24 +215,47 @@ func (i *Installer) Passthrough(args []string) error {
 }
 
 // processArgs 处理参数
+//
+// `-d` 只补给 up：down 与 restart 都没有这个标志，补上去等于让透传必然失败
+// （`somcli docker-compose down` → "unknown shorthand flag: 'd'"）
 func (i *Installer) processArgs(args []string) []string {
 	utils.PrintDebug("处理命令参数，原始参数: %v", args)
-	if len(args) > 0 {
-		switch args[0] {
-		case "up", "down", "restart":
-			if !contains(args, "-d") && !contains(args, "--detach") {
-				args = append(args, "-d")
-				utils.PrintDebug("添加 -d 参数")
-			}
-		case "ps":
-			if !contains(args, "-a") && !contains(args, "--all") {
-				args = append(args, "-a")
-				utils.PrintDebug("添加 -a 参数")
-			}
+	// 子命令不一定在 args[0]：`--env-file .env up` 这种前面还有 compose 的全局标志
+	switch subcommandOf(args) {
+	case "up":
+		if !contains(args, "-d") && !contains(args, "--detach") {
+			args = append(args, "-d")
+			utils.PrintDebug("添加 -d 参数")
+		}
+	case "ps":
+		if !contains(args, "-a") && !contains(args, "--all") {
+			args = append(args, "-a")
+			utils.PrintDebug("添加 -a 参数")
 		}
 	}
 	utils.PrintDebug("处理后的参数: %v", args)
 	return args
+}
+
+// subcommandOf 找出第一个不是标志的 token。
+// 只认 compose 自己那批带值的全局标志，认不出就当它是子命令 —— 猜错的方向是"不补默认标志"，
+// 比"把 --env-file 的取值当成子命令"安全。
+func subcommandOf(args []string) string {
+	takesValue := map[string]bool{
+		"--env-file": true, "--file": true, "-f": true,
+		"--project-name": true, "-p": true, "--project-directory": true,
+		"--profile": true, "--ansi": true, "--parallel": true, "--progress": true,
+	}
+	for idx := 0; idx < len(args); idx++ {
+		tok := args[idx]
+		if !strings.HasPrefix(tok, "-") {
+			return tok
+		}
+		if takesValue[tok] {
+			idx++ // 跳过它的取值
+		}
+	}
+	return ""
 }
 
 // handleSignals 处理信号
@@ -222,9 +273,11 @@ func (i *Installer) handleSignals(cmd *exec.Cmd) {
 }
 
 // isInstalled 检查是否已安装
+//
+// 判据是"存在且可执行"。原实现写的是 !os.IsNotExist(err)：权限不足之类的非 ENOENT 错误
+// 会被读成"已安装"，然后直接去 exec 一个读不到的路径
 func (i *Installer) isInstalled() bool {
-	_, err := os.Stat(i.installPath)
-	return !os.IsNotExist(err)
+	return utils.IsExecutable(i.installPath)
 }
 
 // contains 检查切片是否包含某字符串

@@ -90,18 +90,32 @@
 
 ## M1.4 子系统修复
 
-- [ ] D8/F13：重写 compose 安装器 —— 真正落盘 + chmod + 校验；修 `docker-comopose` 拼写；使用入参版本；URL 用 `{{.Arch}}`；去掉非法 `{{}}` 模板（SC-C02）
-- [ ] D7：实现 `loadNodesFromFile`，或让 docker 子系统复用统一的 `nodes:` 解析并删除这条独立路径（SC-C01）
-- [ ] F14：images `pull`/`push`/`import` 聚合每张镜像的错误并影响退出码；失败时不写出镜像清单
-- [ ] E6：`registry uninstall` 补齐自身标志（`-H` 等），不再依赖 install 的包级变量
-- [ ] E7：`delete` 注册 `-n/--namespace`
-- [ ] 黑盒用例：`test/local/{docker,compose}_test.go`
+- [x] D8/F13：重写 compose 安装器 —— 真正落盘 + chmod + 校验；修 `docker-comopose` 拼写；使用入参版本；URL 用 ~~`{{.Arch}}`~~ `{{.UnameArch}}`（见「执行期偏差记账」）；去掉非法 `{{}}` 模板（SC-C02）
+- [x] D7：实现 `loadNodesFromFile`，或让 docker 子系统复用统一的 `nodes:` 解析并删除这条独立路径（SC-C01）
+- [x] F14：images `pull`/`push`/`import`（连带 `export`）聚合每张镜像的错误并影响退出码；失败时不写出镜像清单
+- [x] E6：`registry uninstall` 补齐自身标志（`-H` 等），不再依赖 install 的包级变量
+- [x] E7：`delete` 注册 `-n/--namespace`
+- [x] D10：透传命令下全局 flag 生效且不泄漏给下游（SC-X08）
+      本条原先没有任何里程碑认领，收口 phase 1 时并进 M1.4：它验的是 `--workdir` 这类
+      somcli 自己的 flag 别混进传给 `docker compose` 的参数里，与 compose 重写是同一片代码
+- [x] 黑盒用例：`test/local/{docker,compose,images,subsystem_flags}_test.go`、~~`test/cluster/`~~`test/local/compose_passthrough_test.go`
+      E6/E7 在矩阵里没有 phase 1 场景，另补 `subsystem_flags_test.go` 四条 CLI 表层用例（见提案）
 
 ## 测试
 
-- [ ] `go test ./...` 全绿
-- [ ] `go test ./test/local/... -tags=remote`、`./test/multinode/... -tags=multinode` 全绿
-- [ ] 每个 D/E/F 编号缺陷在修复前能复现失败
+- [x] `go test ./...` 全绿
+- [x] `go test ./test/local/... -tags=remote`、`./test/multinode/... -tags=multinode` 全绿
+      multinode 组本机无 docker 整包跳过（0.9s），红绿由 integration 流水线复核
+- [x] 每个 D/E/F 编号缺陷在修复前能复现失败
+      M1.4 的 23 条新用例在 `feeeee1` 上 19 红 4 绿，逐条归因见提案
+
+## 遗留项（phase 1 收口时未兑现的半边）
+
+- [ ] SC-M02 的 `matrix` 半边：多发行版容器矩阵 + "somcli 该不该自己 sudo"未决
+- [ ] SC-D10 / SC-F03：remote 组用例
+- [ ] SC-C01 的 multinode 半边：真装一次 docker 需要 docker-in-docker，三节点夹具做不到
+- [ ] SC-C02 的 `matrix` 半边：`{{.UnameArch}}` 的价值在 arm64 上不 404，CI 现在只跑 amd64
+- [ ] images `export` 失败时残留的半截 `.tar.gz` 未清理
 
 ## 评审
 
@@ -111,7 +125,8 @@
 
 ## 归档
 
-- [ ] changelog 补条目，`method` 语义变更、顶层 `proxy:` 键删除、compose 缓存目录变更各自单列
+- [x] changelog 补条目，`method` 语义变更、顶层 `proxy:` 键删除、compose 缓存目录变更各自单列
+      `changes/changelog/0.3.0-alpha.md`；另把"状态参与决策"与"images 失败退出码"也列为 BREAKING
 - [ ] `git mv changes/proposals/20260818-migrate-phase1-engine-completion/ changes/archive/`
 - [ ] `current-proposal` 切到 `20260818-migrate-phase2-cluster-as-config`
 

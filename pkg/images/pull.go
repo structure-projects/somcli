@@ -34,31 +34,34 @@ func Pull(config Config) error {
 		return err
 	}
 
+	var failed failures
 	for _, img := range images {
 		fullName := formatImageName(img, config.Repo)
 		logrus.Infof("Pulling image: %s", fullName)
 
 		if err := utils.RunCommand("docker", "pull", fullName); err != nil {
-			logrus.Warnf("Failed to pull image %s: %v", fullName, err)
+			failed.add(fmt.Sprintf("pull %s", fullName), err)
 			continue
 		}
 
 		if config.Repo != "" && !strings.HasPrefix(img.Name, config.Repo) {
 			localName := formatImageName(img, "")
 			if err := utils.RunCommand("docker", "tag", fullName, localName); err != nil {
-				logrus.Warnf("Failed to tag image %s as %s: %v", fullName, localName, err)
+				failed.add(fmt.Sprintf("tag %s as %s", fullName, localName), err)
 				continue
 			}
 		}
 	}
 
-	if config.OutputFile != "" {
+	// 有失败就不写清单：清单是"这些镜像已在本地"的凭据，下游 export/push 直接照着它干活。
+	// 把没拉下来的镜像也写进去，等于把失败伪装成成功传给下一步
+	if config.OutputFile != "" && !failed.any() {
 		if err := saveImageList(images, filepath.Join(config.OutputFile)); err != nil {
 			return fmt.Errorf("failed to save image list: %v", err)
 		}
 	}
 
-	return nil
+	return failed.err("pull", len(images))
 }
 
 func validateScope(scope string) error {

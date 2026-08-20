@@ -40,23 +40,31 @@ var rootCmd = &cobra.Command{
 	Long: `somcli is a unified management tool for container technologies including 
 Docker, Docker Compose, Docker Swarm and Kubernetes.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// 设置调试模式
-		utils.SetDebugMode(debugMode)
-
-		utils.SetOffline(offline)
-
-		// --set 先于配置生效：applyGlobalSettings 读配置时只填 configVars 那一层，
-		// 覆盖层在这里一次装好，两层的优先级就与读取顺序无关了。
-		vars, err := parseSetVars(setVars)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		utils.SetOverrideVars(vars)
-
-		// 初始化配置必须在所有命令执行前完成
-		initConfig()
+		applyGlobalFlags()
 	},
+}
+
+// applyGlobalFlags 把全局标志的值真正落到运行期状态上。
+//
+// 单独抽出来是因为透传命令（DisableFlagParsing）要在 PersistentPreRun 之后才解析出
+// 自己那份全局标志，解析完必须再调一次，否则 --workdir 解析了也不生效（D10）。
+func applyGlobalFlags() {
+	// 设置调试模式
+	utils.SetDebugMode(debugMode)
+
+	utils.SetOffline(offline)
+
+	// --set 先于配置生效：applyGlobalSettings 读配置时只填 configVars 那一层，
+	// 覆盖层在这里一次装好，两层的优先级就与读取顺序无关了。
+	vars, err := parseSetVars(setVars)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	utils.SetOverrideVars(vars)
+
+	// 初始化配置必须在所有命令执行前完成
+	initConfig()
 }
 
 // parseSetVars 解析 --set k=v。

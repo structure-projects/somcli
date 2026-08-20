@@ -57,6 +57,7 @@ func Export(config Config) error {
 	}
 	defer os.RemoveAll(tempDir)
 
+	var failed failures
 	for _, img := range images {
 		fullName := formatImageName(img, config.Repo)
 		tempFile := filepath.Join(tempDir, sanitizeImageName(fullName)+".tar")
@@ -64,14 +65,18 @@ func Export(config Config) error {
 		logrus.Infof("Saving image: %s to %s", fullName, tempFile)
 
 		if err := utils.RunCommand("docker", "save", "-o", tempFile, fullName); err != nil {
-			logrus.Warnf("Failed to save image %s: %v", fullName, err)
+			failed.add(fmt.Sprintf("save %s", fullName), err)
 			continue
 		}
 
 		if err := addFileToTar(tarWriter, tempFile, filepath.Base(tempFile)); err != nil {
-			logrus.Warnf("Failed to add image %s to archive: %v", fullName, err)
+			failed.add(fmt.Sprintf("archive %s", fullName), err)
 			continue
 		}
+	}
+
+	if err := failed.err("export", len(images)); err != nil {
+		return err
 	}
 
 	logrus.Infof("Images exported to: %s", outputPath)

@@ -37,6 +37,12 @@ var (
 	harborVersion string
 	harborHost    string
 	caPath        string
+
+	// uninstall 用自己的变量，不再蹭 install 的包级变量：过去它一个标志都没注册，
+	// 却在 PreRunE 里校验那两个只有 install 才会填的变量，于是 `registry uninstall`
+	// 无论怎么写都先死在"invalid hostname format"上，根本到不了卸载逻辑（E6）
+	harborUninstallVersion string
+	harborUninstallHost    string
 )
 
 var registryInstallCmd = &cobra.Command{
@@ -71,19 +77,22 @@ var unInstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Uninstall Harbor registry",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
-		if !strings.Contains(harborHost, ".") && harborHost != "localhost" {
+		// 卸载靠的是安装目录（`GetAppDir()/harbor`），既不看版本也不看主机名，
+		// 所以这两个标志是可选的，只在用户真给了值时才校验格式
+		if harborUninstallHost != "" &&
+			!strings.Contains(harborUninstallHost, ".") && harborUninstallHost != "localhost" {
 			return fmt.Errorf("invalid hostname format, must be a domain name or localhost")
 		}
-		if !strings.HasPrefix(harborVersion, "v") {
+		if harborUninstallVersion != "" && !strings.HasPrefix(harborUninstallVersion, "v") {
 			return fmt.Errorf("harbor version must start with 'v'")
 		}
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		manager := registry.NewHarborManager(
-			harborVersion,
-			harborHost,
-			caPath,
+			harborUninstallVersion,
+			harborUninstallHost,
+			"",
 			viper.GetViper(),
 		)
 
@@ -91,7 +100,7 @@ var unInstallCmd = &cobra.Command{
 			fmt.Printf("Error UnInstall Harbor: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Harbor UnInstalled successfully at %s\n", harborHost)
+		fmt.Println("Harbor UnInstalled successfully")
 	},
 }
 
@@ -191,6 +200,11 @@ func init() {
 	registryInstallCmd.Flags().StringVarP(&harborHost, "hostname", "H", "", "Harbor hostname (e.g. harbor.example.com) (required)") // 将 'h' 改为 'H'
 	registryInstallCmd.Flags().StringVar(&caPath, "ca-path", "", "Path to CA certificate files directory")
 	registryInstallCmd.MarkFlagRequired("hostname")
+
+	// uninstall 命令参数 —— 与 install 同名同短标志，但绑到自己的变量；
+	// hostname 不设 required：卸载只需要安装目录
+	unInstallCmd.Flags().StringVarP(&harborUninstallVersion, "version", "v", "", "Harbor version that was installed (optional)")
+	unInstallCmd.Flags().StringVarP(&harborUninstallHost, "hostname", "H", "", "Harbor hostname that was installed (optional)")
 
 	RegistryCmd.AddCommand(syncCmd)
 	RegistryCmd.AddCommand(registryInstallCmd)

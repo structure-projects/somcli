@@ -129,6 +129,9 @@ func init() {
 	getCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Namespace")
 	getCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format")
 	describeCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Namespace")
+	// delete 一直在往下传 namespace 却从没注册过这个标志，于是 `delete pod x -n kube-system`
+	// 直接报 unknown shorthand flag，而不带 -n 时又只能删到 default 命名空间（E7）
+	deleteCmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Namespace")
 
 	// 添加到根命令
 	rootCmd.AddCommand(getCmd)

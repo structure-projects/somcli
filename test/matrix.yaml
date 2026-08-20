@@ -710,14 +710,15 @@ scenarios:
   # 写用例时新发现：docker-compose 用 DisableFlagParsing 做透传，于是 cobra 连
   # somcli 自己的全局 flag 都不解析，`somcli --workdir X docker-compose up` 既丢了
   # workdir（产物落回 ./somwork），又把 --workdir X 当成 compose 的参数透传下去。
-  # 判据要观察到 compose 真的被调用，本机没有 compose 观察不到，故归到 cluster 环境。
+  # 判据要观察到 compose 真的被调用 —— 一个假的 docker-compose 脚本（--path 指过去）就够了，
+  # 真集群带不来额外判据，故从 cluster 挪回 local。
   - id: SC-X08
     desc: 透传命令下 somcli 的全局 flag 正确生效且不泄漏给下游
-    env: [cluster]
-    files: [test/cluster/compose_passthrough_test.go]
+    env: [local]
+    files: [test/local/compose_passthrough_test.go]
     defects: [D10]
     phase: 1
-    status: pending
+    status: done
 
   # 统一配置 schema 之后新增：一份文件必须在所有场景下都能加载，各命令只取自己那一段。
   # 改之前 install / cluster create / images 各认一套 schema，同一份文件换个场景就解析失败。

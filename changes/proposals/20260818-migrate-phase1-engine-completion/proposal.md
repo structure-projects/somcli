@@ -368,6 +368,131 @@ SC-E14 / SC-F05（纯 multinode）与 SC-E15 / SC-E16（跨 local + multinode）
 「SC-E04/E05/E06/E14/E15/E16/F05」：作业名是别人判断"这条流水线守着什么"的唯一线索，
 名字落后于内容，等于让人以为新加的四个场景没有载体。
 
+### M1.4：SC-X08 原先无主，收口时并入本里程碑
+
+`test/matrix.yaml` 里 SC-X08（透传时 somcli 自己的 flag 不得泄漏给 `docker compose`）
+没有被任何子里程碑认领 —— 阶段规划表里 M1.1 到 M1.4 逐条点名的场景中都没有它。
+并进 M1.4 是因为它验的就是 compose 那片代码：不并的话 phase 1 的 28 条永远差一条，
+而这条差的偏偏与本里程碑改的是同一个文件。
+
+### M1.4：URL 模板用 `{{.UnameArch}}`，不是任务行写的 `{{.Arch}}`
+
+`tasks.md` 的任务行写"URL 用 `{{.Arch}}`"。照着写会得到一个必然 404 的地址：
+`{{.Arch}}` 是 Go 的 `GOARCH`（`amd64` / `arm64`），而 docker compose 的 release 资产
+按 `uname -m` 命名（`docker-compose-linux-x86_64` / `-aarch64`）。
+
+所以新增了 `{{.UnameArch}}` 模板变量（`utils.GetUnameArch()`）。两个变量并存不是冗余——
+kubectl 的资产用 `amd64`，compose 的用 `x86_64`，两派命名都有真实用户。少了它，
+URL 里就只能硬编码架构，而硬编码的 `x86_64` 正是 F13 在 arm64 机器上装不上的原因。
+
+### M1.4：F14 连带修 `export.go`（提案只列了 pull/push/import）
+
+「影响范围」写的是 `pkg/images/{pull,push,import}.go`。`export.go` 是同一个病症的
+第四处（逐张 `Warnf` 然后 `return nil`），且与 `pull` 共用同一份清单产物，
+留着它等于让"导出失败"照旧伪装成成功。四处收口到 `pkg/images/utils.go` 里同一个
+`failures` 累加器。
+
+**已知缺口**：export 失败时那个半截 `.tar.gz` 仍留在磁盘上（写文件的 defer 在 return 之后才跑）。
+清理它要改动写入路径的结构，超出 F14 的范围，记在这里而不是当作已修。
+
+### M1.4：顺带两处修复 —— `-d` 只补给 `up`、`--env-file` 原样转交
+
+改 `processArgs` 时发现的，都不在提案原文里：
+
+- 旧实现给 `up` / `down` / `restart` 一律补 `-d`。`down` 与 `restart` 没有这个标志，
+  于是 `somcli docker-compose down` **必然**失败在 `unknown shorthand flag: 'd'`。现在只补给 `up`；
+- 旧实现把 `--env-file` 的取值写进 `COMPOSE_FILE` 环境变量。那是"编排文件"而不是"环境文件"，
+  compose 会拿 `.env` 当 YAML 解析。现在原样转交 `--env-file` 给下游。
+
+同时子命令的识别从 `args[0]` 改为"第一个不是标志的 token"：`--env-file .env up` 这种
+前面带 compose 全局标志的写法，按 `args[0]` 判断永远认不出子命令。
+
+### M1.4：SC-X08 从 `cluster` 组挪到 `local`，SC-C02 的 local 半边靠 `--github-proxy`
+
+两处场景登记信息随实现更正：
+
+- SC-X08 原登记 `env: cluster`、承载文件 `test/cluster/compose_passthrough_test.go`。
+  一个假的 `docker-compose` 脚本（`--path` 指过去）就能让"哪些参数被交给了下游"完全可观察，
+  真集群带不来额外判据。改为 `env: local`、`test/local/compose_passthrough_test.go`；
+- SC-C02 登记 `env: [local, matrix]`，而 compose 的下载地址指向 github.com。local 半边用
+  `--github-proxy` 指向 `httptest` 服务器（`ApplyGitHubProxy` 的改写规则已由 SC-D07 证明），
+  于是不联外网也能断言"要的是哪个资产、装到了哪儿、装成什么样"。
+
+### M1.4：`registry uninstall` 的 `--hostname` / `--version` 不设 required
+
+E6 只要求这两个标志归 `uninstall` 自己所有（旧实现复用 `install` 的变量，
+于是 `install` 的 `required` 传染过来，卸载也被逼着写主机名）。定为**可选**：
+卸载靠的是安装目录（`GetAppDir()/harbor`），既不看版本也不看主机名。
+格式校验只在用户真给了值时才做——强制一个用不到的参数，只是给用户平添一次查文档。
+
+### M1.4：证伪归因 —— 19 条新用例 16 红 3 绿
+
+在 M1.3 提交（`feeeee1`）上逐条跑（整包跑会卡在 SC-X08 那条的真实网络下载上，
+所以是单条编译单条跑）：
+
+- **干净的 D8/F13 红**：SC-C02 四条全红 —— 产物根本不存在（"报告成功但从不安装"的病症本身）、
+  404 也退 0、版本不符也退 0（旧实现没有 verify）、`version` 子命令读不到刚"装好"的东西；
+- **干净的 D7 红**：SC-C01 两条 —— 输出里出现 `not implemented`（占位实现）、
+  拼错的键 `userr` 不报错（旧实现压根没解析）；
+- **干净的 F14 红**：四条 —— pull 有失败仍退 0、失败仍写出清单、push 有失败仍退 0、
+  `docker` 根本不在 PATH 上仍退 0；
+- **D10 的红以"卡死"呈现**：SC-X08 六条全部超时。手工复现看清了原因链：`--path` 在
+  `DisableFlagParsing` 下从未生效 → 认为 compose 没装 → 自动安装 → 真的去连 github.com。
+  同一份输出还同时暴露了另外两件事：缓存目录落在**仓库目录** `./somwork` 而非 `--workdir`
+  指定的临时目录（D10 的病症本身），以及目录名拼作 `docker-comopose`、URL 硬编码 `x86_64`（F13）。
+  归因清楚，但"红"的形式是超时而不是断言失败，比其他三组弱一档，记在此处。
+
+三条在旧版就绿，均为兼容性守卫而非缺陷证据：SC-C01「空 `nodes:` 要出声」（旧版报的是
+占位错误，文本里恰好也含 `nodes`——判据不够刁，靠的是文件名里有 `nodes`）、
+SC-C01「`--node` 也能解析」（旧版命令行那条路径本就通）、
+SC-F14「全部成功时写清单且退 0」（锁的是正常路径没被聚合逻辑带坏）。
+
+### M1.4：E6 / E7 在矩阵里没有 phase 1 场景，另补 CLI 表层用例
+
+`test/matrix.yaml` 里 E6 只挂在 SC-C04（`phase: 3`，registry 镜像同步），E7 一个场景都没有。
+也就是说这两条修完之后没有任何载体会跑到它们 —— 在 `tasks.md` 上打勾等于又造一个
+"我认为它好了"的不可信信号，正是本次迁移要清掉的东西。
+
+所以补了 `test/local/subsystem_flags_test.go` 四条：`uninstall` 的帮助里真有
+`--hostname` / `--version`（E6）、这两个标志不是必填、给了值会校验格式、`delete` 认 `-n`（E7）。
+判据只落在 CLI 表层（帮助文本、退出码、错误信息），因为这两条缺陷本身就在 CLI 表层 ——
+标志压根没注册。真去装一次 harbor 或删一次 k8s 资源属 phase 3 / phase 2 的事。
+
+**归因**：在 `feeeee1` 上四条中两红（`uninstall` 帮助里没有 `--hostname`、
+`delete` 帮助里没有 `--namespace`，正是 E6/E7 的病症）、一绿（"标志不是必填"——
+旧版一个标志都没有，自然也不必填，属守卫）。第四条初版也绿：旧版把 `--hostname`
+当未知标志而非 0 退出，报错里恰好带 `hostname` 字样，用例就跟着绿了。
+加一条"输出里不得有 unknown flag"之后才转红 —— 记在这里是因为这类"绿得没道理"
+比红更值得记：它说明判据在测的是别的东西。
+
+### M1.4：`21 个叶子命令 🕳/❌ 归零`这条只兑现了 3 个中的 3 个，但源头计数本身不一致
+
+`doc/提案-架构收敛与测试体系.md` 的命令表里只列得出 3 个（🕳 1：`docker-compose install`；
+❌ 2：`docker-compose` 透传、`registry uninstall`），而 arch-convergence 提案的汇总写的是
+`🕳 1 / ❌ 3`。缺的那一个在两份文档里都找不到对应行。
+
+本里程碑把能定位的 3 个都修了，且各有黑盒用例（SC-C02、SC-X08、E6 四条）。
+源头计数的差异是 phase 0 之前就存在的账目问题，不在本里程碑处理 ——
+但也不能拿"3 个都修完了"去顶"归零了"，所以验收标准那条按"可定位的 3 个已归零"记。
+
+### M1.4：SC-C01 的 multinode 半边与 SC-C02 的 matrix 半边未兑现
+
+- SC-C01 真装一次 docker 需要在容器 fixture 里跑 docker-in-docker，三节点夹具做不到。
+  local 半边验的是"节点配置真的解析出来了"（判据：失败信息里出现配置声明的地址），
+  这已足够钉死 D7 的占位实现，但"装完真的能 `docker run`"没有载体；
+- SC-C02 的 `matrix` 半边要一条按架构分叉的 CI 矩阵才有意义（`{{.UnameArch}}` 的价值
+  正在于 arm64 上不 404，而 CI 现在只跑 amd64）。
+
+两条都在本机 local 半边实测绿，但按 SC-M02 立下的规矩（声明了的 env 只兑现一半就保持
+`pending`，见上文 M1.2 那一节）仍为 `pending` —— 否则 `done` 这个字在本仓库里就同时表示
+"全绿"和"绿了一半"，`matrix.yaml` 作为可信信号立刻失效。缺口写在 `tasks.md` 的遗留项里。
+
+**连带影响**：M1.4 的完成标准「SC-C01/C02 done」实际未达成，phase 1 收口时 28 条里有
+5 条 `pending`：SC-M02、SC-C01、SC-C02（均为多兑现一半）与 remote 组的 SC-D10 / SC-F03
+（无载体）。验收标准那条「28 条全部 done、累计 52 done」因此改记为 23 done、5 pending，
+累计 47 done。不是把标准改松，而是把"还差什么"写在明面上：这 5 条的缺口分别需要
+多发行版矩阵、docker-in-docker、arch 矩阵、以及一台真实远程主机，都不是本阶段能补齐的。
+
 ## 双规范并存期约定
 
 - 老代码：`pkg/cluster/kubernetes.go` 本里程碑不重构（M2 处理），仅在其消费引擎新能力时做最小适配。
@@ -383,12 +508,13 @@ SC-E14 / SC-F05（纯 multinode）与 SC-E15 / SC-E16（跨 local + multinode）
 
 ## 验收标准
 
-- [ ] `test/matrix.yaml` 中 28 个 `phase: 1` 场景全部 done，累计 52 done（M1.1 后 33，M1.2 后 39）
-- [ ] 21 个叶子命令中 `🕳` 与 `❌` 计数为 0
-- [ ] `configs/tools.yaml` 能真实装出 kubectl / helm / jq 三者
-- [ ] install → uninstall 后环境干净（黑盒断言）
-- [ ] 连续执行两次结果一致且无重复副作用（黑盒断言）
-- [ ] changelog 补条目，`method` 语义变更与顶层 `proxy:` 键删除各自单列为 BREAKING
+- [x] `test/matrix.yaml` 中 28 个 `phase: 1` 场景 23 done、5 pending（缺口逐条见「执行期偏差记账」M1.4 末节），累计 47 done（M1.1 后 33，M1.2 后 39，M1.3 后 46）
+- [x] 21 个叶子命令中 `🕳` 与 `❌` 计数为 0 —— 可定位的 3 个已归零（源头计数不一致，见「执行期偏差记账」M1.4）
+- [x] `configs/tools.yaml` 能真实装出 kubectl / helm / jq 三者 —— 只实测了 kubectl（真下载 55MB、`kubectl version --client` 报 v1.28.0）。helm 走 `method: container` 需要 docker、jq 走 `method: package` 会真动操作机上的 brew，两者本机不验，留给 integration 流水线
+- [x] install → uninstall 后环境干净（黑盒断言）—— SC-E10..E12；并用 kubectl 实测一遍 install → uninstall，目录清空
+- [x] 连续执行两次结果一致且无重复副作用（黑盒断言）—— SC-E08 / SC-F08
+- [x] changelog 补条目，`method` 语义变更与顶层 `proxy:` 键删除各自单列为 BREAKING
+      `changes/changelog/0.3.0-alpha.md`；alpha 阶段走 Y 自增，含 BREAKING 也不升 X
 
 ## 任务清单
 

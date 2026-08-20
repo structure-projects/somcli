@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -55,17 +56,34 @@ Examples:
 		// 代价是 --help 也变成透传参数，因此必须在 Run 里显式拦截，见下。
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
+			// DisableFlagParsing 之下 cobra 既不解析 somcli 自己的 flag，也不把它们从 args 里
+			// 摘掉，于是 `somcli --workdir /tmp/x docker-compose up` 既丢了 --workdir，
+			// 又把它连值一起透传给 docker compose（D10）。这里自己切一刀。
+			own := []*pflag.FlagSet{cmd.Root().PersistentFlags(), cmd.Flags()}
+			mine, rest := splitOwnFlags(own, args)
+
 			// 查看帮助不得产生任何副作用。透传路径会在 compose 缺失时自动下载安装，
 			// 所以帮助必须在触碰安装器之前拦掉。
-			if isHelpRequest(cmd.Root().PersistentFlags(), args) {
+			if isHelpRequest(rest) {
 				_ = cmd.Help()
 				return
 			}
 
+			if err := parseOwnFlags(own, mine); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			// 全局标志是刚才才解析出来的，PersistentPreRun 那一遍用的是默认值
+			applyGlobalFlags()
+
 			if envFile != "" {
-				if _, err := os.Stat(envFile); err == nil {
-					os.Setenv("COMPOSE_FILE", envFile)
+				if _, err := os.Stat(envFile); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: --env-file %s 不可读: %v\n", envFile, err)
+					os.Exit(1)
 				}
+				// 原实现把它写进 COMPOSE_FILE，那是"编排文件"而不是"环境文件"，
+				// compose 会拿 .env 当 yaml 解析。正确做法是原样转交给 compose
+				rest = append([]string{"--env-file", envFile}, rest...)
 			}
 
 			coomposeInstall := compose.NewComposeInstaller(silent, viper.GetViper())
@@ -73,8 +91,7 @@ Examples:
 				coomposeInstall.SetInstallPath(installPath)
 			}
 
-			filteredArgs := filterArgs(args, envFile != "")
-			if err := coomposeInstall.Passthrough(filteredArgs); err != nil {
+			if err := coomposeInstall.Passthrough(rest); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -145,59 +162,80 @@ func addDockerComposeSubcommands(rootCmd *cobra.Command, silent *bool, installPa
 	rootCmd.AddCommand(versionCmd)
 }
 
-// isHelpRequest 判断这次调用是不是在要帮助。
+// splitOwnFlags 把头部属于 somcli 的 flag 与要透传给 docker compose 的参数分开。
 //
-// DisableFlagParsing 之下 cobra 连 somcli 自己的全局 flag 都不解析，而是一并塞进 args：
-// `somcli --workdir /tmp/x docker-compose --help` 的 args[0] 是 --workdir 而不是 --help。
-// 所以要先跳过头部属于 somcli 的全局 flag（全局 flag 只可能出现在子命令名之前），
-// 再看第一个真正给 compose 的参数。只认这一个，避免误吞 `docker-compose logs -h`
-// 这类本该透传下去的写法。
-func isHelpRequest(globals *pflag.FlagSet, args []string) bool {
+// 判据：全局 flag 只可能出现在子命令名之前，所以从头扫，遇到第一个"不是 somcli 认识的
+// flag"的 token 就停，其后一律原样交给下游。这条边界不能省 ——
+// `docker-compose -p myproj up` 里的 -p 是 compose 的项目名，原实现按名字硬摘一批
+// flag（含 -p / -e），项目名与 `exec -e K=V` 都会被吞掉。
+func splitOwnFlags(sets []*pflag.FlagSet, args []string) (mine, rest []string) {
 	for len(args) > 0 {
-		switch args[0] {
-		case "-h", "--help", "help":
-			return true
-		}
-		if !strings.HasPrefix(args[0], "-") {
-			return false
+		tok := args[0]
+		if !strings.HasPrefix(tok, "-") || tok == "-" || tok == "--" {
+			break
 		}
 
-		name, _, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
-		flag := globals.Lookup(name)
+		name, _, hasValue := strings.Cut(strings.TrimLeft(tok, "-"), "=")
+		flag := lookupOwnFlag(sets, name, strings.HasPrefix(tok, "--"))
 		if flag == nil {
-			// 不是 somcli 的全局 flag，那就是 compose 自己的，透传。
-			return false
+			break
 		}
+
+		mine = append(mine, tok)
 		args = args[1:]
 		if !hasValue && flag.Value.Type() != "bool" && len(args) > 0 {
-			args = args[1:] // 连它的取值一起跳过
+			mine = append(mine, args[0]) // 连它的取值一起带走
+			args = args[1:]
 		}
 	}
-	// 只给了全局 flag，等同于没给 compose 任何参数。
-	return true
+	return mine, args
 }
 
-// todo env file 提取到root上
-func filterArgs(args []string, hasEnvFile bool) []string {
-	var filtered []string
-	skipNext := false
-
-	for i, arg := range args {
-		if skipNext {
-			skipNext = false
+// lookupOwnFlag 在 somcli 自己的几个 flagset 里查这个名字：长写法查全名，短写法查简写。
+// 查不到就当成下游的参数 —— 认不出时倾向透传，而不是吞掉。
+func lookupOwnFlag(sets []*pflag.FlagSet, name string, long bool) *pflag.Flag {
+	for _, set := range sets {
+		if long {
+			if f := set.Lookup(name); f != nil {
+				return f
+			}
 			continue
 		}
-
-		if strings.HasPrefix(arg, "-") {
-			switch arg {
-			case "-y", "--yes", "-p", "--proxy", "--path", "-e", "--env-file":
-				skipNext = true
-				continue
+		if len(name) == 1 {
+			if f := set.ShorthandLookup(name); f != nil {
+				return f
 			}
 		}
+	}
+	return nil
+}
 
-		filtered = append(filtered, args[i])
+// parseOwnFlags 让切出来的那批 flag 真正生效。
+func parseOwnFlags(sets []*pflag.FlagSet, args []string) error {
+	if len(args) == 0 {
+		return nil
 	}
 
-	return filtered
+	// AddFlagSet 加进来的是同一批 *pflag.Flag，解析写的就是原来那些变量
+	merged := pflag.NewFlagSet("somcli-own", pflag.ContinueOnError)
+	merged.SetOutput(io.Discard)
+	for _, set := range sets {
+		merged.AddFlagSet(set)
+	}
+	return merged.Parse(args)
+}
+
+// isHelpRequest 判断这次调用是不是在要帮助。args 是 splitOwnFlags 切完之后
+// 真正给 compose 的那部分，所以只看第一个 token：`docker-compose logs -h` 里的 -h
+// 本该透传下去，不算帮助请求。
+func isHelpRequest(args []string) bool {
+	if len(args) == 0 {
+		// 只给了 somcli 自己的 flag，等同于没给 compose 任何参数
+		return true
+	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		return true
+	}
+	return false
 }

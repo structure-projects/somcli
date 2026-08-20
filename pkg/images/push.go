@@ -16,6 +16,7 @@ limitations under the License.
 package images
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -32,6 +33,7 @@ func Push(config Config) error {
 		return err
 	}
 
+	var failed failures
 	for _, img := range images {
 		localName := formatImageName(img, "")
 		remoteName := formatImageName(img, config.Repo)
@@ -39,17 +41,17 @@ func Push(config Config) error {
 		if config.Repo != "" && !strings.HasPrefix(img.Name, config.Repo) {
 			logrus.Infof("Tagging image %s as %s", localName, remoteName)
 			if err := utils.RunCommand("docker", "tag", localName, remoteName); err != nil {
-				logrus.Warnf("Failed to tag image %s as %s: %v", localName, remoteName, err)
+				failed.add(fmt.Sprintf("tag %s as %s", localName, remoteName), err)
 				continue
 			}
 		}
 
 		logrus.Infof("Pushing image: %s", remoteName)
 		if err := utils.RunCommand("docker", "push", remoteName); err != nil {
-			logrus.Warnf("Failed to push image %s: %v", remoteName, err)
+			failed.add(fmt.Sprintf("push %s", remoteName), err)
 			continue
 		}
 	}
 
-	return nil
+	return failed.err("push", len(images))
 }

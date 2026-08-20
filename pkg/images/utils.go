@@ -185,3 +185,25 @@ func formatImageName(img Image, repo string) string {
 	}
 	return fmt.Sprintf("%s/%s:%s", repo, img.Name, img.Tag)
 }
+
+// failures 收集逐张镜像的失败。整批操作不因单张失败而中断（一次 pull 几十张，
+// 第三张挂掉就停等于让用户重跑全部），但整批必须以非 0 退出——F14 的病症正是
+// "每张都 Warnf 然后 return nil"，用户看着 exit 0 以为镜像齐了。
+type failures struct {
+	items []string
+}
+
+func (f *failures) add(subject string, err error) {
+	f.items = append(f.items, fmt.Sprintf("%s: %v", subject, err))
+	logrus.Errorf("%s: %v", subject, err)
+}
+
+func (f *failures) any() bool { return len(f.items) > 0 }
+
+func (f *failures) err(action string, total int) error {
+	if !f.any() {
+		return nil
+	}
+	return fmt.Errorf("%s failed for %d of %d image(s):\n  - %s",
+		action, len(f.items), total, strings.Join(f.items, "\n  - "))
+}

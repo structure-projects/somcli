@@ -202,7 +202,7 @@ func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey stri
 
 	// 从文件加载节点配置
 	if nodesFile != "" {
-		fileNodes, err := loadNodesFromFile(nodesFile)
+		fileNodes, err := loadNodesFromFile(nodesFile, user, sshKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load nodes from file: %v", err)
 		}
@@ -223,8 +223,41 @@ func getTargetNodes(nodesFile string, nodeIPs []string, user string, sshKey stri
 	return nodes, nil
 }
 
-// loadNodesFromFile 从YAML文件加载节点配置
-func loadNodesFromFile(filePath string) ([]types.RemoteNode, error) {
-	utils.LoadConfig(filePath)
-	return nil, fmt.Errorf("YAML node config loading not implemented yet")
+// loadNodesFromFile 从 YAML 文件加载节点配置。
+//
+// 走 utils.LoadConfig —— install 与 cluster 子系统用的是同一个解析器（UnmarshalStrict：
+// 拼错的键直接报错）。docker 子系统从此没有自己的一套 nodes: 解析，也就不会再和别处漂移（D7）。
+func loadNodesFromFile(filePath, user, sshKey string) ([]types.RemoteNode, error) {
+	cfg, err := utils.LoadConfig(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.Nodes) == 0 {
+		return nil, fmt.Errorf("%s 里没有 nodes: 段，无法确定安装目标", filePath)
+	}
+
+	nodes := make([]types.RemoteNode, 0, len(cfg.Nodes))
+	for _, n := range cfg.Nodes {
+		// 连接地址取的是 IP；只写了 host 的条目拿 host 顶上，否则会 ssh 到空字符串
+		if n.IP == "" {
+			n.IP = n.Host
+		}
+		// localhost 条目走本机路径。不置这个标志就会 ssh 回操作机自己，
+		// 在没配免密的机器上直接失败；判据与 utils.GetNode 共用一个函数
+		if utils.IsLocalHostLiteral(n.Host) || utils.IsLocalHostLiteral(n.IP) {
+			n.IsLocal = true
+		}
+		// 命令行的 --user / --ssh-key 作为兜底，节点自己写了就以节点为准
+		if n.User == "" {
+			n.User = user
+		}
+		if n.SSHKey == "" {
+			n.SSHKey = sshKey
+		}
+		if !n.IsLocal && n.IP == "" {
+			return nil, fmt.Errorf("%s 中有节点既没写 host 也没写 ip，无法定位", filePath)
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes, nil
 }
