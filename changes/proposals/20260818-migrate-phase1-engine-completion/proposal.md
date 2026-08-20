@@ -516,6 +516,20 @@ F14 已经改动的两个文件里，各不到 20 行，分开提交只会让 di
 `Close` 失败要模拟磁盘满。现有夹具（`runEnvIn` 只给 env 与 workdir）也没有设置 CWD 的入口。
 为一条 SHOULD 改夹具不值得，改生产代码求可测性违反项目约定，故明确记在 `review.md` 里而非含糊带过。
 
+### 收口 CI：`compose_passthrough_test.go` 自身的数据竞争（本机漏检）
+
+M1.4 的 SC-X08 用例在三个平台的 CI 上同时变红，原因不在被测代码而在**用例自己**：
+`TestSC_X08_WorkdirFlagReachesPassthrough` 先调 `composeAssetServer`（内部
+`httptest.NewServer` 立刻开始服务），再改 `srv.Config.Handler` —— 与服务协程构成数据竞争。
+改成建服务器时就把处理器交进去。
+
+**为什么本机没发现**：CI 跑的是 `go test ./... -count=1 -race`，我本机一直跑不带 `-race` 的
+`go test ./...`。这正是 phase 0「可信信号」要治的病症的一个新变种 —— 本机绿不等于门禁绿，
+判据不同的两个命令给出的是两种信号。**后续里程碑本机自检一律跟 CI 对齐加 `-race`**。
+
+（附带说明：这条不影响 SC-X08 的结论。竞争发生在夹具搭建阶段，用例断言的
+"`--workdir` 生效且不泄漏"在修掉竞争后仍然成立，无需重新证伪。）
+
 ## 双规范并存期约定
 
 - 老代码：`pkg/cluster/kubernetes.go` 本里程碑不重构（M2 处理），仅在其消费引擎新能力时做最小适配。

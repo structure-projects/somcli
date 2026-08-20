@@ -18,6 +18,7 @@ package local
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,8 +99,10 @@ func TestSC_X08_WorkdirFlagReachesPassthrough(t *testing.T) {
 	const autoVersion = "2.24.0" // 透传自动安装用的缺省版本
 
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	srv, _ := composeAssetServer(t, autoVersion, http.StatusOK)
-	srv.Config.Handler = recordingComposeHandler(argsFile, autoVersion)
+	// 处理器必须在建服务器时就交进去：httptest.NewServer 立刻开始服务，
+	// 之后再改 srv.Config.Handler 是与服务协程的数据竞争（-race 下必红）
+	srv := httptest.NewServer(recordingComposeHandler(argsFile, autoVersion))
+	t.Cleanup(srv.Close)
 
 	workdir := filepath.Join(t.TempDir(), "custom-work")
 	installPath := filepath.Join(t.TempDir(), "docker-compose")
