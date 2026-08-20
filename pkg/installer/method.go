@@ -53,11 +53,11 @@ func applyMethod(res types.Resource, artifacts []types.DownloadResult) (utils.Ru
 	case "source":
 		cmds, err = installSource(res, artifacts)
 	case "manifest":
-		return utils.RunOutcome{}, fmt.Errorf("method: manifest 尚未实现（随集群编排在 M2 落地），当前可用：script / binary / package / container / source")
+		cmds, err = installManifest(res, artifacts)
 	default:
 		// 认不出来必须报错。静默当成 script 跑正是 E1 的病症：
 		// 配置里写着 method: binary，实际什么都没做，而退出码是 0。
-		return utils.RunOutcome{}, fmt.Errorf("未知的 method %q，可用：script / binary / package / container / source", res.Method)
+		return utils.RunOutcome{}, fmt.Errorf("未知的 method %q，可用：script / binary / package / container / source / manifest", res.Method)
 	}
 	if err != nil {
 		return utils.RunOutcome{}, err

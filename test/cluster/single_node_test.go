@@ -46,7 +46,11 @@ func TestSC_K01_SingleMasterContainerd(t *testing.T) {
 		}
 	})
 
-	cfg := clusterConfig(t, "sc-k01", "1.28.2", "containerd", master)
+	// 节点是全包共用的，前一条用例装的集群还留在上面。不先清场的话 kubeadm init
+	// 会以"端口已占用 / 配置已存在"失败，而那与本条要验的东西无关。
+	resetCluster(t, master, worker)
+
+	cfg := clusterConfig(t, "sc-k01", "1.28.2", "containerd", "", master)
 
 	code, out := runSomcli(t, "cluster", "create", "-f", cfg)
 	if code != 0 {

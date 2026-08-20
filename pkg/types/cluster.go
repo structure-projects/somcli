@@ -42,10 +42,16 @@ type K8sConfig struct {
 	// 多 master 时必填：三个 master 各有各的 IP，kubeconfig 与证书必须指向一个不随单机存亡的地址，
 	// 否则第一个 master 一挂，集群就没了入口。单 master 留空即可。
 	ControlPlaneEndpoint string `yaml:"controlPlaneEndpoint"`
-	ImageRepository      string `yaml:"imageRepository"` // 镜像仓库地址 registry.aliyuncs.com/google_containers
-	PauseImageVersion    string `yaml:"pauseImageVersion"`
-	CniPluginsVersion    string `yaml:"cniPluginsVersion"`
-	RuncVersion          string `yaml:"runcVersion"`
+	// Cni 选网络插件："flannel"（默认）或 "calico"。
+	// 不装 CNI 的集群节点会永久 NotReady，所以这里没有"不装"这个选项。
+	Cni string `yaml:"cni"`
+	// CniVersion 是网络插件自身的版本（不是 cniPluginsVersion —— 那个是
+	// /opt/cni/bin 下的二进制插件包）。留空则用 somcli 内置的默认版本。
+	CniVersion        string `yaml:"cniVersion"`
+	ImageRepository   string `yaml:"imageRepository"` // 镜像仓库地址 registry.aliyuncs.com/google_containers
+	PauseImageVersion string `yaml:"pauseImageVersion"`
+	CniPluginsVersion string `yaml:"cniPluginsVersion"`
+	RuncVersion       string `yaml:"runcVersion"`
 }
 
 type SwarmConfig struct {

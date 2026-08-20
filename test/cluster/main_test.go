@@ -63,6 +63,11 @@ type node struct {
 var (
 	binPath string
 	keyPath string
+	// workdir 全包共用一个。集群用例每条都要装 containerd + runc + cni-plugins +
+	// kube 三件套，一条用例一个 workdir 的话每条都要重新下一遍（几百兆），
+	// 一晚上的额度全花在下载上。共用之后"装过的不再装"正是引擎的幂等能力，
+	// 用例之间只重置 k8s（resetCluster），不重装二进制。
+	workdir string
 )
 
 // TestMain 起停 fixture。
@@ -113,6 +118,11 @@ func setup() error {
 	if err := generateKey(); err != nil {
 		return err
 	}
+	dir, err := os.MkdirTemp("", "somcli-cluster-work")
+	if err != nil {
+		return err
+	}
+	workdir = dir
 	if out, err := compose("up", "-d", "--build"); err != nil {
 		return fmt.Errorf("起容器失败: %v\n%s", err, out)
 	}
@@ -205,10 +215,13 @@ func systemdReady(n node) bool {
 
 // clusterConfig 写一份 k8s 集群配置，返回路径。
 //
+// cni 传空串表示配置里不写这个键 —— 走 somcli 自己的默认值，
+// 那也是绝大多数用户实际会用的形态，得有用例走过。
+//
 // 不做 hack/mkclusterconfig 那种独立生成器：test/ 不能 import 本仓库的包，
 // 生成器与用例只能各写一份，两份必然漂移。要手工复现时把用例打印出来的这份配置
 // 直接喂给 somcli 即可（失败时用例会把路径与内容一并输出）。
-func clusterConfig(t *testing.T, name, version, runtime string, nodes ...node) string {
+func clusterConfig(t *testing.T, name, version, runtime, cni string, nodes ...node) string {
 	t.Helper()
 
 	var b strings.Builder
@@ -223,6 +236,9 @@ func clusterConfig(t *testing.T, name, version, runtime string, nodes ...node) s
       podNetworkCidr: "10.244.0.0/16"
       serviceCidr: "10.96.0.0/12"
 `, version, runtime)
+	if cni != "" {
+		fmt.Fprintf(&b, "      cni: %q\n", cni)
+	}
 
 	path := filepath.Join(t.TempDir(), "cluster.yaml")
 	content := b.String()
@@ -238,7 +254,7 @@ func clusterConfig(t *testing.T, name, version, runtime string, nodes ...node) s
 func runSomcli(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 
-	full := append([]string{"--workdir", t.TempDir()}, args...)
+	full := append([]string{"--workdir", workdir}, args...)
 	cmd := exec.Command(binPath, full...)
 	out, err := cmd.CombinedOutput()
 
@@ -298,6 +314,42 @@ func waitFor(t *testing.T, what string, timeout time.Duration, check func() (boo
 			t.Fatalf("等「%s」超时（%v）。最后一次看到的是：\n%s", what, timeout, last)
 		}
 		time.Sleep(5 * time.Second)
+	}
+}
+
+// resetCluster 把节点上的 k8s 抹掉，但保留已经装好的二进制。
+//
+// 用 kubeadm reset 而不是 `somcli cluster remove`：用例之间的清场必须与被测行为无关，
+// 否则 remove 有问题时，坏掉的是下一条用例，报错指向的地方全是错的。
+// `cluster remove` 自身的正确性由 lifecycle 那条用例单独验（SC-K11）。
+func resetCluster(t *testing.T, nodes ...node) {
+	t.Helper()
+
+	for _, n := range nodes {
+		for _, cmd := range []string{
+			"kubeadm reset -f --cri-socket unix:///var/run/containerd/containerd.sock || true",
+			"rm -rf /etc/kubernetes /etc/cni/net.d $HOME/.kube",
+			// CNI 留下的网桥不删掉的话，下一次装出来的 Pod 会拿到上一次网段里的地址
+			"ip link delete cni0 2>/dev/null || true",
+			"ip link delete flannel.1 2>/dev/null || true",
+		} {
+			if out, err := ssh(n, cmd); err != nil {
+				t.Logf("清场命令在 %s 上失败（继续）：%s\n%v\n%s", n.host, cmd, err, out)
+			}
+		}
+	}
+}
+
+// applyManifest 把一段清单喂给 master 上的 kubectl。
+//
+// 走 stdin 而不是先落文件：清单是用例自己的夹具，不该在节点上留下需要清理的东西。
+func applyManifest(t *testing.T, manifest string) {
+	t.Helper()
+
+	cmd := "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f - <<'SOMCLI_TEST_EOF'\n" +
+		manifest + "\nSOMCLI_TEST_EOF"
+	if out, err := ssh(master, cmd); err != nil {
+		t.Fatalf("apply 清单失败: %v\n输出：\n%s\n清单：\n%s", err, out, manifest)
 	}
 }
 

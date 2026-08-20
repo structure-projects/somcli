@@ -24,17 +24,23 @@
 
 ## M2.2 修行为（k8s 第一次真的能装上）
 
-- [ ] D4：改用 `kubeadm token create --print-join-command`，替代只取首行的 `extractJoinCommand`（SC-K03）
-- [ ] D5：CNI 部署 —— calico 与 flannel 各作为一条 `method: manifest` 资源（SC-K06/K07/K09）
+- [x] D4：改用 `kubeadm token create --print-join-command`，替代只取首行的 `extractJoinCommand`（SC-K03）
+      —— 连带不再把 join 命令存文件（token 24 小时过期，扩容时读到的是过期命令），`extractJoinCommand` 已删
+- [x] D5：CNI 部署 —— calico 与 flannel 各作为一条 `method: manifest` 资源（SC-K06/K07/K09）
+      —— 新增配置键 `cni` / `cniVersion`；`method: manifest` 提前到本里程碑实现（见 proposal「偏差 7」）
 - [x] D6（前半）：`containerRuntime: docker` 且版本 ≥ 1.24 时在校验阶段拒绝，报错点明 1.24 分界与两条出路（SC-K15）
       顺带把 `configs/config.yaml` 里装不成的 `1.28.2 + docker` 示例改成 `containerd`
 - [ ] D6（后半）：启用 cri-dockerd（引用已有 `service/cri-docker.*`），届时把上面的拒绝放宽为
       "缺 cri-dockerd 才拒绝"，并删掉错误文案里"somcli 尚不支持"那句（SC-K02）
-- [ ] F7：containerd `config.toml` 设 `SystemdCgroup = true`（SC-K01）
-- [ ] F8：写 `/etc/sysctl.d/k8s.conf`（`bridge-nf-call-iptables`、`ip_forward`）+ 内核模块（SC-K14）
-- [ ] F10（部分）：把 `configureFirewall` 纳入 k8s 流程
-- [ ] NodePort 从宿主可访问（SC-K10）
-- [ ] `test/local/cluster_kubernetes_test.go`：join 命令解析（真实两行续行输出）
+- [x] F7：containerd `config.toml` 设 `SystemdCgroup = true`（SC-K01）—— 改完 `grep` 验一遍，sed 没匹配上也会退 0
+- [x] F8：写 `/etc/sysctl.d/k8s.conf`（`bridge-nf-call-iptables`、`ip_forward`）+ `/etc/modules-load.d/k8s.conf`（SC-K14）
+- [x] F10（部分）：把 `configureFirewall` 纳入 k8s 流程；顺带把写死的 `yum install` 换成
+      shell 侧的包管理器分派（借了 M3 一小片，见 proposal「偏差 10」）
+- [x] NodePort 从宿主可访问（SC-K10）—— 用例落在 `test/cluster/multi_node_test.go`（单 master 有污点，调度不上 Pod）
+- [x] ~~`test/local/cluster_kubernetes_test.go`：join 命令解析~~ 作废：修完之后已无"解析 init 输出"这件事
+      （见 proposal「偏差 9」），join 成不成由 cluster 组双节点用例回答
+- [x] 顺带修：空版本拼出 404 URL（`applyK8sDefaults`）、`imageRepository` 为空时改坏 containerd 配置、
+      `cni-plugins` 资源与 containerd 同名撞幂等状态（见 proposal「偏差 11」）
 
 ## M2.3 外置结构（单独提交，最高风险点）
 
@@ -42,7 +48,8 @@
 - [ ] 跑一次 E2E 确认仍绿
 - [ ] `ClusterConfig`/`K8sConfig` 补 `resources` 字段；`cluster create` 改为按名称引用组装并交给引擎执行
 - [ ] `SwarmConfig` 的 `DefaultAddrPool`/`SubnetSize`/`DataPathPort` 接线或明确移除
-- [ ] `method: manifest` 走 `kubectl apply`（SC-M06）、`apply` 命令覆盖（SC-C06）
+- [ ] ~~`method: manifest` 走 `kubectl apply`（SC-M06）~~ 已在 M2.2 实现（D5 要用它装 CNI），
+      本阶段只补 `apply` 命令的覆盖（SC-C06）
 - [ ] `install.sh` / `Makefile` / `go.yml` 打包带上 `configs/k8s/`
 - [ ] 断言 `pkg/cluster` 内 `types.Resource` 字面量为 0
 - [ ] 再跑一次 E2E 确认仍绿

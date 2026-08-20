@@ -198,12 +198,13 @@ scenarios:
     phase: 1
     status: done
 
-  # M1.2 已在 test/local/method_test.go 放了一条占位守卫：method: manifest 必须报
-  # "尚未实现"而不是被当成未知取值 —— 用户会以为自己拼错了。真正的 kubectl apply 在 M2。
+  # M2.2 实现了 method: manifest（CNI 就是靠它装的）。分两层验：
+  # local 用 PATH 上的假 kubectl 断言"确实调了 kubectl apply、apply 的是那个文件"，
+  # cluster 组由 CNI 用例给出集群侧的结论（清单 apply 之后节点 Ready、Pod 有地址）。
   - id: SC-M06
     desc: "method: manifest 对集群 kubectl apply"
-    env: [cluster]
-    files: [test/cluster/manifest_test.go]
+    env: [local, cluster]
+    files: [test/local/method_test.go, test/cluster/cni_test.go]
     defects: [E1, D5]
     phase: 2
     status: pending
@@ -442,10 +443,12 @@ scenarios:
     phase: 2
     status: pending
 
+  # 放在双节点用例里而不是单节点：单 master 带 control-plane 污点，
+  # 普通 Pod 根本调度不上去，NodePort 后面没有后端可言。
   - id: SC-K10
     desc: NodePort 服务从宿主可访问
     env: [cluster]
-    files: [test/cluster/single_node_test.go]
+    files: [test/cluster/multi_node_test.go]
     defects: [D5]
     phase: 2
     status: pending

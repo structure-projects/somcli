@@ -3,10 +3,9 @@
 # 这条流水线回答的是别处回答不了的问题：集群装成功了没有。test/local 只能验
 # "装不成的配置被拦住"，test/multinode 的节点没有 systemd、跑不了 kubelet。
 #
-# 不挂在 push 上：一次要装 containerd + kubeadm 再跑 kubeadm init，几十分钟量级，
-# 且 M2.2 的行为修复完成之前**预期是红的**（红在哪一层就说明哪个缺陷还在，
-# 见 test/cluster/single_node_test.go 的注释）。挂在 push 上只会让所有人习惯性无视红灯。
-# 所以：每晚一次 + 手动触发。等 M2.2 转绿之后再考虑并入 PR 门禁。
+# 不挂在 push 上的原因是耗时：一次要装五遍集群（flannel / calico / 双节点 / 单节点 /
+# preflight），几十分钟量级。每晚一次 + 手动触发；
+# 转绿并稳定之后再考虑挑一条并入 PR 门禁（见总纲待决事项 4）。
 name: E2E 集群
 
 on:
@@ -19,10 +18,12 @@ permissions:
   contents: read
 
 jobs:
-  single-node:
-    name: 单 master 真实安装 (SC-K01)
+  cluster:
+    name: 真实安装 k8s（单节点 / 双节点 / CNI / preflight）
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 一晚上要装五遍集群（flannel、calico、双节点、单节点、preflight）。
+    # 二进制只下一次（用例共用一个 workdir），耗时主要是 kubeadm init 与镜像拉取。
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -37,7 +38,7 @@ jobs:
       # 节点里做不到，也不该算在 somcli 头上：
       #   swap —— kubeadm 读 /proc/swaps，那是宿主全局的，容器里关不掉；
       #   内核模块 —— 容器共享宿主内核，模块没加载的话节点里连对应的 sysctl 都不存在；
-      #   （somcli 该做的是在节点上写 sysctl 与 modprobe，那部分由 SC-K01 断言，不在这里代劳）
+      #   （somcli 该做的是在节点上写 sysctl 与 modprobe，那部分由 SC-K14 断言，不在这里代劳）
       - name: 准备宿主内核前置
         run: |
           set -eux
@@ -52,7 +53,7 @@ jobs:
       - name: 测试
         env:
           SOMCLI_CLUSTER_KEEP: '1'
-        run: go test -tags=cluster ./test/cluster/... -count=1 -v -timeout 45m
+        run: go test -tags=cluster ./test/cluster/... -count=1 -v -timeout 110m
 
       # 用例自己会在失败时打 kubelet / containerd 现场（dumpNodeLogs）。
       # 这里再补一层：TestMain 阶段就失败的话，用例根本没跑到。

@@ -685,11 +685,11 @@ resources:
 	}
 }
 
-// TestSC_M06_MethodManifestNotImplemented method: manifest 还没实现，必须明说。
+// TestSC_M06_MethodManifestNeedsSource manifest 没有清单可 apply 时必须明确报错。
 //
-// 与未知 method 分开报：manifest 是路线图上的合法取值（随集群编排落地），
-// 报"未知的 method"会让用户以为自己拼错了，反复去查文档。
-func TestSC_M06_MethodManifestNotImplemented(t *testing.T) {
+// 与"未知 method"分开报：manifest 是合法取值，缺的是清单来源，
+// 报"未知的 method"会让用户以为自己拼错了名字，反复去查文档。
+func TestSC_M06_MethodManifestNeedsSource(t *testing.T) {
 	cfg := writeConfig(t, `
 resources:
   - name: app
@@ -699,10 +699,61 @@ resources:
 
 	code, out := run(t, "install", "-f", cfg)
 	if code == 0 {
-		t.Fatalf("method: manifest 却退出码 0，输出：\n%s", out)
+		t.Fatalf("method: manifest 没给清单却退出码 0，输出：\n%s", out)
 	}
-	if !strings.Contains(out, "manifest") || !strings.Contains(out, "未实现") {
-		t.Errorf("错误信息没说清 manifest 是未实现而非拼错，输出：\n%s", out)
+	if !strings.Contains(out, "urls") || !strings.Contains(out, "extra_files") {
+		t.Errorf("错误信息没说清清单从哪来，用户无从纠正，输出：\n%s", out)
+	}
+}
+
+// TestSC_M06_MethodManifestApplies manifest 把 extra_files 里的清单交给 kubectl apply。
+//
+// 用 PATH 上的假 kubectl 观察：真集群上的断言在 cluster 组（CNI 装上、节点 Ready），
+// 但"到底有没有调 kubectl apply、apply 的是哪个文件"这件事不需要集群就能判定，
+// 在开发机上就该有结论。
+func TestSC_M06_MethodManifestApplies(t *testing.T) {
+	workdir := t.TempDir()
+	fakeBin := filepath.Join(workdir, "fakebin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatalf("建假 bin 目录失败: %v", err)
+	}
+	record := filepath.Join(workdir, "kubectl-args.txt")
+	fake := "#!/bin/sh\necho \"$@\" >> " + record + "\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "kubectl"), []byte(fake), 0o755); err != nil {
+		t.Fatalf("写假 kubectl 失败: %v", err)
+	}
+
+	manifestPath := filepath.Join(workdir, "app.yaml")
+	cfg := writeConfigIn(t, workdir, `
+resources:
+  - name: app
+    version: "1.0"
+    method: "manifest"
+    extra_files:
+      `+manifestPath+`: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: somcli-manifest-test
+`)
+
+	code, out := runEnvIn(t, workdir,
+		[]string{"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			// kubeconfig 的探测在生成的 shell 里，本机没有 admin.conf 也没有
+			// $HOME/.kube/config，显式给一个免得用例卡在"找不到 kubeconfig"上
+			"KUBECONFIG=" + filepath.Join(workdir, "kubeconfig")},
+		"install", "-f", cfg)
+	if code != 0 {
+		t.Fatalf("method: manifest 执行失败，退出码 %d，输出：\n%s", code, out)
+	}
+
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("清单没有落盘: %v\n输出：\n%s", err, out)
+	}
+
+	args := readFile(t, record)
+	if !strings.Contains(args, "apply -f") || !strings.Contains(args, manifestPath) {
+		t.Errorf("kubectl 没有被要求 apply 这份清单，收到的参数：%q\n输出：\n%s", args, out)
 	}
 }
 

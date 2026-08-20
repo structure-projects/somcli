@@ -181,6 +181,91 @@ M2.3 支持 cri-dockerd 之后，这条拒绝要相应放宽为"缺 cri-dockerd 
 integration.yml 一个入口。因此在 `ci.yml` 的静态检查里补三条 `go vet -tags=…`，
 让编译期错误在 push 时就暴露。这不改产品行为，只是让信号来得及时。
 
+### 偏差 7：`method: manifest` 提前到 M2.2 实现（原属 M2.3）
+
+D5 要求 CNI 是一条 `method: manifest` 资源，而该 method 此前返回"尚未实现"。
+不实现它，D5 就只能在 `pkg/cluster` 里手写 `kubectl apply` —— 那是又一处没人走的分支，
+且 M2.3 外置时还要拆掉重来。于是把它提到 M2.2：`pkg/installer/method_manifest.go`，
+生成 `kubectl apply -f <清单>`，清单来自 `urls`（下载物）或 `extra_files`（配置内联）。
+
+- kubeconfig 的选择写在**生成的 shell 里**（`/etc/kubernetes/admin.conf` 优先，
+  再 `$HOME/.kube/config`）：apply 发生在节点上，操作机有没有 admin.conf 与它无关；
+  且刚 init 出来的 master 上只有 admin.conf，两个都认才能在"init 完立刻装 CNI"这个时点工作。
+- 清单顺序按路径排序：`extra_files` 是 map，遍历顺序随机，不排的话两次执行的 apply
+  顺序不同，清单间有依赖时表现为偶发失败。
+- `test/local/method_test.go` 里那条"必须报未实现"的占位守卫随之作废，
+  换成两条真断言：缺清单来源要明确报错；用 PATH 上的假 kubectl 验证真的调了
+  `kubectl apply -f <那个文件>`。改之前后者是红的（报"尚未实现"），改之后绿。
+
+### 偏差 8：CNI 是配置项，新增键 `cni` 与 `cniVersion`
+
+原方案只说"CNI 是一条 `method: manifest` 资源"，没说选哪个、版本从哪来。
+`configs/config.yaml` 里也没有这个键。新增两个可选键：
+
+- `cni`：`flannel`（默认）/ `calico`。取值认不出来在**连节点之前**拒绝。
+- `cniVersion`：网络方案自身的版本（与 `cniPluginsVersion` 不是一回事，后者是
+  `/opt/cni/bin` 下的二进制插件包）。留空取内置默认值。
+
+不是 BREAKING：老配置逐字不变仍可用，留空即 flannel。
+
+两份清单都要按 `podNetworkCidr` 改网段，且改完必须 `grep` 验一遍：
+清单换了键名时 `sed` 匹配不上也退 0，那就成了"改过了"的假象，而错要到跨节点不通时才暴露。
+calico 的 `CALICO_IPV4POOL_CIDR` 在官方清单里是注释掉的，不显式设它会用自己的默认
+`192.168.0.0/16` —— 与 kubeadm 的 `--pod-network-cidr` 对不上。
+
+### 偏差 9：join 命令改为在 master 上现场生成，不再存文件
+
+D4 的方案是"改用 `kubeadm token create --print-join-command`"，这里连带去掉了
+"把 join 命令写进 `somwork/` 再读回来"这一步。除了两行续行会被刮掉半条命令之外，
+存文件还有第二个问题：默认 token 24 小时过期，扩容时读到的是一条过期命令。
+
+因此 `tasks.md` 里那条 `test/local/cluster_kubernetes_test.go`（join 命令解析，
+喂真实两行续行输出）作废 —— 修完之后已经没有"解析 init 输出"这件事了，
+本机也无从黑盒观察 master 上生成的命令。join 到底成不成由 cluster 组的双节点用例回答。
+
+### 偏差 10：借了 M3 一小片 —— 包管理器判断下沉到生成的 shell
+
+F10 原计划只"把 `configureFirewall` 纳入流程"，发行版抽象整体留给 M3。
+但基础依赖那一步写死了 `yum install -y socat conntrack ebtables ipset`，
+而 E2E 的节点是 ubuntu —— 集群安装在第一步就失败，后面的修复一条都验不到。
+
+改为在**生成的 shell 里**按 `command -v` 依次认 apt-get / dnf / yum / apk / zypper，
+认不出来明确报错。判断必须发生在目标节点上：拿操作机的发行版去挑包管理器，
+一到远程就是错的（与 `--sudo` 同一个道理）。完整的发行版抽象仍属 M3。
+
+### 偏差 11：顺带修的两处（不在方案清单里，但不修就装不成）
+
+- **空版本拼出 404**：`containerdVersion` / `runcVersion` / `cniPluginsVersion` 等留空时，
+  下载 URL 渲染成 `.../download/v/cni-plugins-linux-amd64-v.tgz`。新增 `applyK8sDefaults`
+  统一填默认值，并把每一个填进去的值打印出来 —— 装上的东西与配置不一致时，
+  用户得能在日志里看到到底装的是哪个版本。
+- **`imageRepository` 为空时把 containerd 配置改坏**：原先无条件拼两条 sed，
+  空值时生成 `sed 's|k8s.gcr.io||g'` 与 `sandbox_image = "/pause:"`，
+  报错指向"沙箱镜像拉取失败"，根因看不出来。改为仅在配了仓库时才拼。
+- **`cni-plugins` 资源与 containerd 同名**：幂等状态按名字+版本记，两条资源共用
+  `Name: "containerd"`，先装的那条会被后装的覆盖，"这台机器装过 cni-plugins 没有"
+  永远查不到正确答案。改名为 `cni-plugins`。
+
+### 偏差 12：cluster 组用例共用一个 workdir，并自行清场
+
+一条用例一个 `--workdir` 的话，每条都要重新下 containerd + runc + cni-plugins +
+kube 三件套（几百兆），一晚上的额度全花在下载上。改为全包共用一个 workdir ——
+"装过的不再装"正是引擎的幂等能力，用例之间只用 `kubeadm reset` 抹掉 k8s（`resetCluster`），
+不重装二进制。
+
+清场用 `kubeadm reset` 而不是 `somcli cluster remove`：用例之间的清场必须与被测行为无关，
+否则 remove 有问题时坏掉的是下一条用例，报错指向的地方全是错的。
+`cluster remove` 自身由 SC-K11 单独验。
+
+SC-K10（NodePort）从 `single_node_test.go` 移到 `multi_node_test.go`：
+单 master 带 control-plane 污点，普通 Pod 调度不上去，NodePort 后面没有后端可言。
+
+### 待办：`cluster create --force` 是个死标志
+
+`cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s
+安装流程里没有任何消费点 —— 加了 `--force` 与不加完全一样，装过的资源仍按状态跳过。
+本里程碑不动它（改动会牵到 `installer.Force` 的传递路径），记在此处待 M2.3 外置时一并处理。
+
 ### E2E 前置：宿主上做的三件事
 
 节点是共享宿主内核的容器，因此下面三件事只能在 `e2e.yml` 里对宿主做，

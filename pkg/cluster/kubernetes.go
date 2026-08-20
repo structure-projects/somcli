@@ -47,7 +47,93 @@ LimitCORE=infinity
 
 [Install]
 WantedBy=multi-user.target`
+
+	// basePackagesCmd 在节点上装 kubeadm preflight 要求的那几个包。
+	//
+	// 包管理器的判断写在**生成的 shell 里**而不是 Go 侧：装包发生在目标节点上，
+	// 拿操作机的发行版去挑包管理器，一到远程就是错的（与 --sudo 同一个道理）。
+	// 原先这里写死 yum install -y ...，在 debian/ubuntu 节点上第一步就失败，
+	// 集群安装根本走不到后面。
+	//
+	// 这只是让 k8s 安装能在非 yum 发行版上跑起来的最小处理，完整的发行版抽象仍属 M3。
+	basePackagesCmd = `if command -v apt-get >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y socat conntrack ebtables ipset
+elif command -v dnf >/dev/null 2>&1; then
+  dnf install -y --allowerasing socat conntrack-tools ebtables ipset
+elif command -v yum >/dev/null 2>&1; then
+  yum install -y socat conntrack ebtables ipset
+elif command -v apk >/dev/null 2>&1; then
+  apk add --no-cache socat conntrack-tools ebtables ipset
+elif command -v zypper >/dev/null 2>&1; then
+  zypper --non-interactive install socat conntrack-tools ebtables ipset
+else
+  echo "认不出节点上的包管理器，请先手工安装 socat conntrack ebtables ipset" >&2
+  exit 1
+fi`
 )
+
+// 组件的默认版本。
+//
+// 必须有默认值：配置里不写 containerdVersion 时，URL 会拼成
+// .../download/v/containerd--linux-amd64.tar.gz —— 下载 404，而报错只说"下载失败"，
+// 用户根本看不出是自己少写了一个键。
+// 这些值都对着 k8s 1.28 那一代；M2.3 把安装内容外置到 configs/k8s/*.yaml 之后，
+// 版本会跟着搬到配置里，这里只留兜底。
+const (
+	defaultContainerdVersion = "1.7.22"
+	defaultRuncVersion       = "1.1.14"
+	defaultCniPluginsVersion = "1.5.1"
+	defaultDockerVersion     = "20.10.24"
+
+	cniFlannel            = "flannel"
+	cniCalico             = "calico"
+	defaultFlannelVersion = "0.25.6"
+	defaultCalicoVersion  = "3.28.2"
+)
+
+// applyK8sDefaults 把配置里没写的组件版本补齐，并把补出来的值打出来。
+//
+// 打出来是必要的：装上的东西与配置里写的不完全一致时，用户得能在日志里看到
+// 到底装的是哪个版本，否则出问题时无从对照。
+func applyK8sDefaults(config *types.ClusterConfig) {
+	k8s := &config.Cluster.K8sConfig
+
+	if strings.TrimSpace(k8s.ContainerRuntime) == "" {
+		k8s.ContainerRuntime = "containerd"
+		utils.PrintInfo("  containerRuntime 未配置，使用默认值: %s", k8s.ContainerRuntime)
+	}
+	if strings.TrimSpace(k8s.Cni) == "" {
+		k8s.Cni = cniFlannel
+		utils.PrintInfo("  cni 未配置，使用默认值: %s", k8s.Cni)
+	}
+
+	defaults := []struct {
+		key   string
+		field *string
+		value string
+	}{
+		{"containerdVersion", &k8s.ContainerdVersion, defaultContainerdVersion},
+		{"runcVersion", &k8s.RuncVersion, defaultRuncVersion},
+		{"cniPluginsVersion", &k8s.CniPluginsVersion, defaultCniPluginsVersion},
+		{"dockerVersion", &k8s.DockerVersion, defaultDockerVersion},
+		{"cniVersion", &k8s.CniVersion, defaultCNIVersion(k8s.Cni)},
+	}
+	for _, d := range defaults {
+		if strings.TrimSpace(*d.field) == "" {
+			*d.field = d.value
+			utils.PrintInfo("  %s 未配置，使用默认值: %s", d.key, d.value)
+		}
+	}
+}
+
+// defaultCNIVersion 返回该网络插件的默认版本。
+func defaultCNIVersion(cni string) string {
+	if strings.EqualFold(strings.TrimSpace(cni), cniCalico) {
+		return defaultCalicoVersion
+	}
+	return defaultFlannelVersion
+}
 
 // CreateK8sCluster 创建Kubernetes集群
 func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool) error {
@@ -55,11 +141,13 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	utils.PrintBanner(fmt.Sprintf("正在创建Kubernetes集群: %s", config.Cluster.Name))
 	utils.PrintInfo("开始时间: %s", startTime.Format("2006-01-02 15:04:05"))
 	utils.PrintInfo("集群配置详情:")
+	applyK8sDefaults(config)
 	utils.PrintInfo("  集群名称: %s", config.Cluster.Name)
 	utils.PrintInfo("  Kubernetes版本: %s", config.Cluster.K8sConfig.Version)
 	utils.PrintInfo("  Pod网络CIDR: %s", config.Cluster.K8sConfig.PodNetworkCidr)
 	utils.PrintInfo("  服务CIDR: %s", config.Cluster.K8sConfig.ServiceCidr)
 	utils.PrintInfo("  容器运行时: %s", config.Cluster.K8sConfig.ContainerRuntime)
+	utils.PrintInfo("  网络插件: %s %s", config.Cluster.K8sConfig.Cni, config.Cluster.K8sConfig.CniVersion)
 	utils.PrintInfo("  Docker版本: %s", config.Cluster.K8sConfig.DockerVersion)
 	utils.PrintInfo("  Containerd版本: %s", config.Cluster.K8sConfig.ContainerdVersion)
 
@@ -94,7 +182,18 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	}
 	utils.PrintSuccess("✓ 主节点初始化完成")
 
-	// 4. 工作节点加入
+	// 4. 部署网络插件
+	//
+	// 必须在 worker 加入之前：没有 CNI 时 kubelet 报 NetworkReady=false，节点永久 NotReady，
+	// 先加 worker 只是多几个 NotReady 的节点。
+	utils.PrintStage("== 网络插件部署 ==")
+	if err := deployCNI(masterNode, config); err != nil {
+		utils.PrintError("网络插件部署失败: %v", err)
+		return fmt.Errorf("网络插件部署失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 网络插件部署完成")
+
+	// 5. 工作节点加入
 	utils.PrintStage("== 工作节点加入 ==")
 	if err := joinWorkerNodes(config); err != nil {
 		utils.PrintError("工作节点加入失败: %v", err)
@@ -102,7 +201,7 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	}
 	utils.PrintSuccess("✓ 工作节点加入完成")
 
-	// 5. 集群信息展示
+	// 6. 集群信息展示
 	utils.PrintStage("== 集群信息展示 ==")
 	if err := printK8sClusterInfo(config, masterNode); err != nil {
 		utils.PrintError("集群信息展示失败: %v", err)
@@ -204,9 +303,13 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 
 	installer := installer.NewInstaller()
 
-	// 定义CNI资源
+	// 定义 CNI 插件资源（/opt/cni/bin 下那批二进制，不是网络方案本身）。
+	//
+	// 名字原先也叫 "containerd"，和下面真正的 containerd 资源同名 —— 幂等状态是按
+	// 名字+版本记的，两条资源共用一个名字，先装的那条会被后装的覆盖掉，
+	// 于是"这台机器装过 cni-plugins 没有"永远查不到正确答案。
 	cniResource := types.Resource{
-		Name:    "containerd",
+		Name:    "cni-plugins",
 		Version: config.Cluster.K8sConfig.CniPluginsVersion,
 		Method:  "script",
 		URLs: []string{
@@ -243,6 +346,36 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 	}
 
 	// 定义Containerd资源
+	//
+	// post_install 分步拼而不是写成一整块字面量：镜像仓库相关的两条 sed 只有在
+	// imageRepository 真的配了的时候才能加。此前是无条件拼进去的，配置里不写仓库时
+	// 生成的是 sed 's|k8s.gcr.io||g' 和 sandbox_image = "/pause:" ——
+	// 配置被改坏，containerd 拉不到 pause 镜像，而报错指向的是"沙箱镜像拉取失败"。
+	containerdCmds := []string{
+		"tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz",
+		"mkdir -p /etc/containerd",
+		"containerd config default |  tee /etc/containerd/config.toml >/dev/null",
+	}
+	if repo := strings.TrimSpace(config.Cluster.K8sConfig.ImageRepository); repo != "" {
+		containerdCmds = append(containerdCmds,
+			fmt.Sprintf("sed -i 's|k8s.gcr.io|%s|g' /etc/containerd/config.toml", repo))
+		if pause := strings.TrimSpace(config.Cluster.K8sConfig.PauseImageVersion); pause != "" {
+			containerdCmds = append(containerdCmds,
+				fmt.Sprintf(" sed -i 's|sandbox_image = \".*\"|sandbox_image = \"%s/pause:%s\"|g' /etc/containerd/config.toml",
+					repo, pause))
+		}
+	}
+	containerdCmds = append(containerdCmds,
+		// F7：kubeadm 默认用 systemd 驱动，containerd 默认配置里是 cgroupfs。
+		// 两边不一致的表现是 kubelet 反复重启，而报错完全指不到根因上。
+		"sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml",
+		// 改完必须验：containerd 换过配置格式（v2/v3 的键位置不同），
+		// sed 没匹配上时它照样退 0，那就成了"改过了"的假象。
+		"grep -q 'SystemdCgroup = true' /etc/containerd/config.toml",
+		"systemctl daemon-reload",
+		"systemctl enable --now containerd",
+	)
+
 	containerdResource := types.Resource{
 		Name:    "containerd",
 		Version: config.Cluster.K8sConfig.ContainerdVersion,
@@ -250,16 +383,7 @@ func installContainerd(config *types.ClusterConfig, hosts []string) error {
 		URLs: []string{
 			"https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-amd64.tar.gz",
 		},
-		PostInstall: []string{
-			"tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz",
-			"mkdir -p /etc/containerd",
-			"containerd config default |  tee /etc/containerd/config.toml >/dev/null",
-			"sed -i 's|k8s.gcr.io|" + config.Cluster.K8sConfig.ImageRepository + "|g' /etc/containerd/config.toml",
-			fmt.Sprintf(" sed -i 's|sandbox_image = \".*\"|sandbox_image = \"%s/pause:%s\"|g' /etc/containerd/config.toml",
-				config.Cluster.K8sConfig.ImageRepository, config.Cluster.K8sConfig.PauseImageVersion),
-			"systemctl daemon-reload",
-			"systemctl enable --now containerd",
-		},
+		PostInstall: containerdCmds,
 		ExtraFiles: map[string]string{
 			"/etc/systemd/system/containerd.service": containerdServiceTemplate,
 		},
@@ -322,17 +446,7 @@ func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
 		initCmd += fmt.Sprintf(" --control-plane-endpoint=%s", endpoint)
 	}
 
-	// 添加容器运行时配置
-	runtime := config.Cluster.K8sConfig.ContainerRuntime
-	if runtime == "" {
-		runtime = "containerd"
-	}
-
-	if runtime == "docker" {
-		initCmd += " --cri-socket unix:///var/run/dockershim.sock"
-	} else {
-		initCmd += " --cri-socket unix:///var/run/containerd/containerd.sock"
-	}
+	initCmd += " --cri-socket " + criSocket(config.Cluster.K8sConfig.ContainerRuntime)
 
 	// 添加镜像仓库配置
 	if config.Cluster.K8sConfig.ImageRepository != "" {
@@ -350,19 +464,10 @@ func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
 		return fmt.Errorf("主节点初始化失败: %w\n输出: %s", err, output)
 	}
 
-	joinCommand := extractJoinCommand(output)
-	if joinCommand == "" {
-		err := fmt.Errorf("无法从kubeadm init输出中提取加入命令")
-		utils.PrintError("提取加入命令失败: %v", err)
-		return err
-	}
-
-	joinFile := filepath.Join(utils.GetWorkTmpDir(), config.Cluster.Name+"_k8s-join-command.txt")
-	if err := utils.WriteStringToFile(joinFile, joinCommand); err != nil {
-		utils.PrintError("保存加入命令失败: %v", err)
-		return fmt.Errorf("保存加入命令失败: %w", err)
-	}
-	utils.PrintInfo("加入命令已保存到: %s", joinFile)
+	// D4：不再从 init 输出里刮 join 命令。kubeadm 把它打成两行（第二行是续行，
+	// 带着 --discovery-token-ca-cert-hash），按行取只会拿到半条命令，
+	// 而半条命令跑起来是"缺少 CA hash"这种指不到根因的错。
+	// join 时现场用 kubeadm token create --print-join-command 生成，见 joinWorkerNodes。
 
 	utils.PrintInfo("正在配置kubectl...")
 	cmds := []string{
@@ -445,23 +550,36 @@ func getAllNodesIP(config *types.ClusterConfig) []string {
 	return hosts
 }
 
-// installBaseDependencies 安装基础依赖
+// installBaseDependencies 安装基础依赖，并把 kubeadm preflight 要求的内核前置落到节点上。
 func installBaseDependencies(config *types.ClusterConfig, hosts []string) error {
 	utils.PrintInfo("正在安装基础依赖...")
 
 	commands := []string{
-		" yum install -y socat conntrack ebtables ipset",
+		basePackagesCmd,
 		" swapoff -a",
 		" sed -i '/ swap / s/^/#/' /etc/fstab",
 		" modprobe overlay",
 		" modprobe br_netfilter",
 		" sysctl --system",
+		// F8：写了文件、跑了 sysctl --system，不等于参数真的生效（模块没加载时这两个
+		// 键根本不存在，sysctl --system 只会打一行警告然后退 0）。当场验一遍，
+		// 让它在这里失败，而不是等 kubeadm preflight 报一个指不到根因的错。
+		` test "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1`,
+		` test "$(sysctl -n net.ipv4.ip_forward)" = 1`,
 	}
 
 	baseDeps := types.Resource{
-		Name:        "base-dependencies",
-		Version:     "",
-		Method:      "script",
+		Name:    "base-dependencies",
+		Version: "",
+		Method:  "script",
+		// F8：这两个文件此前从来没人写，于是上面的 sysctl --system 无事可做，
+		// 而 modprobe 的效果重启就没了。
+		ExtraFiles: map[string]string{
+			"/etc/modules-load.d/k8s.conf": "overlay\nbr_netfilter\n",
+			"/etc/sysctl.d/k8s.conf": "net.bridge.bridge-nf-call-iptables  = 1\n" +
+				"net.bridge.bridge-nf-call-ip6tables = 1\n" +
+				"net.ipv4.ip_forward                 = 1\n",
+		},
 		PostInstall: commands,
 		Hosts:       hosts,
 	}
@@ -525,6 +643,15 @@ func prepareK8sNodes(config *types.ClusterConfig) error {
 		if err := configureHostsFile(&node, hostsEntries.String()); err != nil {
 			utils.PrintError("hosts配置失败: %v", err)
 			return fmt.Errorf("节点%s hosts配置失败: %w", node.Host, err)
+		}
+
+		// F10：这个函数一直存在但从来没被调用过。防火墙开着的话，
+		// worker 连不上 6443、kubelet 连不上 10250，表现是节点 NotReady 而不是"被墙了"。
+		// 完整的发行版适配在 M3，这里只把已有的能力接进流程。
+		utils.PrintInfo("正在配置防火墙...")
+		if err := configureFirewall(&node); err != nil {
+			utils.PrintError("防火墙配置失败: %v", err)
+			return fmt.Errorf("节点%s防火墙配置失败: %w", node.Host, err)
 		}
 
 		duration := time.Since(startTime)
@@ -639,6 +766,14 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 		return fmt.Errorf("服务CIDR不能为空")
 	}
 
+	// 网络插件的取值在连节点之前就该判定：认不出来的话装完 kubeadm 才发现没 CNI 可装，
+	// 而节点已经被改过一遍了。留空由 applyK8sDefaults 填成 flannel，所以这里只看非空值。
+	if cni := strings.ToLower(strings.TrimSpace(config.Cluster.K8sConfig.Cni)); cni != "" &&
+		cni != cniFlannel && cni != cniCalico {
+		return fmt.Errorf("不支持的网络插件 cni: %q，可用：%s / %s",
+			config.Cluster.K8sConfig.Cni, cniFlannel, cniCalico)
+	}
+
 	// dockershim 在 k8s 1.24 从 kubelet 移除，而这里走的是 --cri-socket dockershim.sock
 	// （见 initK8sMaster）—— 1.24 以上必然连不上 CRI。不拒绝的话，失败会发生在装完 docker、
 	// 装完 kubeadm、跑到 kubeadm init 的时候：节点已经被改过一遍了。
@@ -686,6 +821,73 @@ func parseK8sMinor(version string) (int, int, bool) {
 	return major, minor, true
 }
 
+// deployCNI 在 master 上部署网络插件（D5）。
+//
+// 之前完全没有这一步：kubeadm init 完节点是 NotReady，装完 somcli 报"创建成功"，
+// 用户拿到的是一个跑不了 Pod 的集群。calico / flannel 在整个 Go 代码里零命中。
+//
+// 走 method: manifest（一条资源，kubectl apply），而不是在这里直接拼 kubectl 命令：
+// 清单的下载、分发、幂等、失败传播都是引擎已经有的能力，重写一遍就是又一处没人走的分支。
+func deployCNI(masterNode *types.RemoteNode, config *types.ClusterConfig) error {
+	k8s := config.Cluster.K8sConfig
+	cni := strings.ToLower(strings.TrimSpace(k8s.Cni))
+	podCidr := strings.TrimSpace(k8s.PodNetworkCidr)
+
+	utils.PrintInfo("正在部署网络插件 %s %s（Pod 网段 %s）...", cni, k8s.CniVersion, podCidr)
+
+	var res types.Resource
+	switch cni {
+	case cniFlannel:
+		res = types.Resource{
+			Name:    "flannel",
+			Version: k8s.CniVersion,
+			Method:  "manifest",
+			URLs: []string{
+				"https://github.com/flannel-io/flannel/releases/download/v{{.Version}}/kube-flannel.yml",
+			},
+			Target: "{{.Filename}}",
+			PreInstall: []string{
+				// 清单里写死 10.244.0.0/16。与 kubeadm --pod-network-cidr 不一致时，
+				// Pod 拿到的地址不在集群网段里，表现是跨节点不通而不是"配错了"。
+				fmt.Sprintf("sed -i 's|10.244.0.0/16|%s|g' {{.CacheDir}}/kube-flannel.yml", podCidr),
+				// 改完必须验：清单换过键名/格式时 sed 匹配不上也退 0，
+				// 那就成了"改过了"的假象，而错要到跨节点通信时才暴露。
+				fmt.Sprintf("grep -q '%s' {{.CacheDir}}/kube-flannel.yml", podCidr),
+			},
+			Hosts: []string{masterNode.IP},
+		}
+	case cniCalico:
+		res = types.Resource{
+			Name:    "calico",
+			Version: k8s.CniVersion,
+			Method:  "manifest",
+			URLs: []string{
+				"https://raw.githubusercontent.com/projectcalico/calico/v{{.Version}}/manifests/calico.yaml",
+			},
+			Target: "{{.Filename}}",
+			PreInstall: []string{
+				// calico 清单里 CALICO_IPV4POOL_CIDR 是注释掉的，不显式设的话它用自己的
+				// 默认 192.168.0.0/16 —— 与 kubeadm 的 --pod-network-cidr 对不上。
+				// 去掉注释后缩进正好与同级列表项对齐（官方文档就是这么改的）。
+				"sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' {{.CacheDir}}/calico.yaml",
+				fmt.Sprintf("sed -i 's|#   value: \"192.168.0.0/16\"|  value: \"%s\"|' {{.CacheDir}}/calico.yaml", podCidr),
+				"grep -q '^ *- name: CALICO_IPV4POOL_CIDR' {{.CacheDir}}/calico.yaml",
+				fmt.Sprintf("grep -q '^ *value: \"%s\"' {{.CacheDir}}/calico.yaml", podCidr),
+			},
+			Hosts: []string{masterNode.IP},
+		}
+	default:
+		// 走不到：validateK8sClusterConfig 已经拒过了。留着是为了万一将来加了取值
+		// 忘了同步这里时，报错指向的是"没实现"而不是静默不装 CNI。
+		return fmt.Errorf("不支持的网络插件: %s", k8s.Cni)
+	}
+
+	if err := installer.NewInstaller().Install(res, false); err != nil {
+		return fmt.Errorf("部署 %s 失败: %w", cni, err)
+	}
+	return nil
+}
+
 // 其他的master 上执行加入master
 func joinMaster(node types.RemoteNode, config *types.ClusterConfig) error {
 	//加入master节点
@@ -693,20 +895,39 @@ func joinMaster(node types.RemoteNode, config *types.ClusterConfig) error {
 	return nil
 }
 
-// joinWorkerNodes 加入工作节点
+// joinWorkerNodes 加入工作节点。
+//
+// join 命令在 master 上现场生成（kubeadm token create --print-join-command），
+// 而不是从 kubeadm init 的输出里刮出来再存文件：
+//   - init 输出里的那条命令是跨两行的，按行提取必然丢 --discovery-token-ca-cert-hash（D4）；
+//   - 存文件还带来第二个问题 —— 默认 token 24 小时过期，扩容时读到的是一条过期命令。
+//
+// --print-join-command 打的是完整一行，且每次都是新 token。
 func joinWorkerNodes(config *types.ClusterConfig) error {
-	joinFile := filepath.Join(utils.GetWorkTmpDir(), config.Cluster.Name+"_k8s-join-command.txt")
-	joinCommand, err := utils.ReadFileToString(joinFile)
-	if err != nil {
-		utils.PrintError("读取加入命令失败: %v", err)
-		return fmt.Errorf("读取加入命令失败: %w", err)
+	workers := make([]types.RemoteNode, 0, len(config.Cluster.Nodes))
+	for i := range config.Cluster.Nodes {
+		if strings.EqualFold(config.Cluster.Nodes[i].Role, "worker") {
+			workers = append(workers, config.Cluster.Nodes[i])
+		}
+	}
+	if len(workers) == 0 {
+		utils.PrintInfo("配置中没有 worker 节点，跳过")
+		return nil
 	}
 
-	for _, node := range config.Cluster.Nodes {
-		if node.Role != "worker" {
-			continue
-		}
+	masterNode := findFirstMasterNode(config)
+	if masterNode == nil {
+		return fmt.Errorf("配置中没有找到主节点，无法生成加入命令")
+	}
 
+	joinCommand, err := generateJoinCommand(masterNode, config)
+	if err != nil {
+		utils.PrintError("生成加入命令失败: %v", err)
+		return err
+	}
+
+	for i := range workers {
+		node := workers[i]
 		utils.PrintStage(fmt.Sprintf("正在加入工作节点: %s", node.Host))
 		startTime := time.Now()
 
@@ -721,6 +942,49 @@ func joinWorkerNodes(config *types.ClusterConfig) error {
 	}
 
 	return nil
+}
+
+// generateJoinCommand 在 master 上生成一条完整的 worker join 命令。
+func generateJoinCommand(masterNode *types.RemoteNode, config *types.ClusterConfig) (string, error) {
+	const printJoin = "KUBECONFIG=/etc/kubernetes/admin.conf kubeadm token create --print-join-command"
+
+	output, err := utils.RunCommandOnNode(masterNode, printJoin)
+	if err != nil {
+		return "", fmt.Errorf("在主节点%s上生成加入命令失败: %w\n输出: %s", masterNode.Host, err, output)
+	}
+
+	// 输出里可能混着 kubeadm 自己的提示行，只认以 kubeadm join 开头的那一行。
+	joinCommand := ""
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "kubeadm join") {
+			joinCommand = line
+			break
+		}
+	}
+	if joinCommand == "" {
+		return "", fmt.Errorf("kubeadm 没有输出可用的加入命令，输出为:\n%s", output)
+	}
+
+	// join 也要指明 CRI 端点：节点上同时装了 docker 与 containerd 时，
+	// kubeadm 检测到多个 socket 会直接报错要求显式指定。
+	if !strings.Contains(joinCommand, "--cri-socket") {
+		joinCommand += " --cri-socket " + criSocket(config.Cluster.K8sConfig.ContainerRuntime)
+	}
+
+	utils.PrintInfo("加入命令: %s", joinCommand)
+	return joinCommand, nil
+}
+
+// criSocket 按容器运行时给出 kubeadm 要用的 CRI 端点。
+//
+// docker 走的 dockershim 在 1.24 已被移除，这条分支只对 1.23 及以下成立 ——
+// 版本与运行时不匹配的组合在 validateK8sClusterConfig 里已经被拒掉了。
+func criSocket(runtime string) string {
+	if strings.EqualFold(strings.TrimSpace(runtime), "docker") {
+		return "unix:///var/run/dockershim.sock"
+	}
+	return "unix:///var/run/containerd/containerd.sock"
 }
 
 // printK8sClusterInfo 打印 Kubernetes 集群信息
@@ -757,17 +1021,6 @@ func printK8sClusterInfo(config *types.ClusterConfig, masterNode *types.RemoteNo
 	}
 
 	return nil
-}
-
-// extractJoinCommand 从 kubeadm init 输出中提取 join 命令
-func extractJoinCommand(output string) string {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "kubeadm join") {
-			return strings.TrimSpace(line)
-		}
-	}
-	return ""
 }
 
 // findMasterNodes 查找所有主节点，返回主节点列表
