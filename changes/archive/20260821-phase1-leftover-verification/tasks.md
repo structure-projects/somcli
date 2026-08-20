@@ -61,6 +61,9 @@
 
 - [x] changelog 补 `0.3.1-alpha` 条目
 - [x] 通过 expert-review（`review.md`：1 条 MUST 已修 —— `tildeKey` 在 CI 上也会静默 skip）
-- [ ] 通过 ci-gate（两条流水线全绿）
-- [ ] `git mv` 到 `changes/archive/`，`current-proposal` 切到 phase 2
+- [ ] 通过 ci-gate（两条流水线全绿）—— **未兑现，归档时仍开着**：新增的三项（两条远程用例 +
+      五发行版作业）本机跑不了，只有流水线能给结论；尚未推送。
+      因此 matrix 里 SC-D10 / SC-F03 / SC-C02 / SC-M02 一律仍是 `pending`，
+      推送后流水线绿了再来置 `done` —— 不因为提案归档了就把它们当成兑现。
+- [x] `git mv` 到 `changes/archive/`，`current-proposal` 切到 phase 2（按用户 2026-08-21 的指令）
 - [ ] 推送需用户确认
