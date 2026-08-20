@@ -38,10 +38,14 @@ type K8sConfig struct {
 	DockerVersion     string `yaml:"dockerVersion"`
 	ContainerdVersion string `yaml:"containerdVersion"`
 	ContainerRuntime  string `yaml:"containerRuntime"` // "docker" 或 "containerd"
-	ImageRepository   string `yaml:"imageRepository"`  // 镜像仓库地址 registry.aliyuncs.com/google_containers
-	PauseImageVersion string `yaml:"pauseImageVersion"`
-	CniPluginsVersion string `yaml:"cniPluginsVersion"`
-	RuncVersion       string `yaml:"runcVersion"`
+	// ControlPlaneEndpoint 是 apiserver 的稳定入口（VIP 或负载均衡），形如 "10.0.0.100:6443"。
+	// 多 master 时必填：三个 master 各有各的 IP，kubeconfig 与证书必须指向一个不随单机存亡的地址，
+	// 否则第一个 master 一挂，集群就没了入口。单 master 留空即可。
+	ControlPlaneEndpoint string `yaml:"controlPlaneEndpoint"`
+	ImageRepository      string `yaml:"imageRepository"` // 镜像仓库地址 registry.aliyuncs.com/google_containers
+	PauseImageVersion    string `yaml:"pauseImageVersion"`
+	CniPluginsVersion    string `yaml:"cniPluginsVersion"`
+	RuncVersion          string `yaml:"runcVersion"`
 }
 
 type SwarmConfig struct {

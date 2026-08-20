@@ -5,14 +5,18 @@
 
 ## 准备
 
-- [ ] M1 已归档，`current-proposal` 已切到本提案
-- [ ] 阅读 `proposal.md` 与技术附录 §4.1 / §4.3 / §5.1 / §5.2 Phase 2 / §6.6
-- [ ] 切 `feat-cluster-as-config` 分支
+- [x] M1 已归档，`current-proposal` 已切到本提案
+- [x] 阅读 `proposal.md` 与技术附录 §4.1 / §4.3 / §5.1 / §5.2 Phase 2 / §6.6
+- [x] 切 `feat-cluster-as-config` 分支
 
 ## M2.1 先建断言
 
+- [x] `test/local/cluster_reject_test.go`：拒绝类用例（SC-K05、SC-K15），写完先跑成三红两绿再改产品
+      —— 见 proposal「偏差 1」，这一档提到 cluster 骨架之前做，因为它是本机唯一能给出可信集群信号的部分
 - [ ] `hack/mkclusterconfig`：按 `--k8s/--runtime/--cni/--node/--ssh-key` 生成集群配置
-- [ ] `test/cluster/` 建包，build tag `e2e`
+- [ ] `test/cluster/` 建包，build tag **`cluster`**（不是 `e2e`：与 `test/matrix.yaml` 的 `env: [cluster]`
+      以及现有 `remote`/`multinode` 的"标签同目录名"惯例对齐；下文第 55 行的写法为准，
+      proposal 与本文件第 15 行原写的 `e2e` 作废）
 - [ ] `test/fixtures/k8s-nodes/compose.yaml`：privileged systemd 容器（1 master + 1 worker）
 - [ ] `.github/workflows/e2e.yml`：nightly + `workflow_dispatch`，失败时收集 kubelet/containerd 日志与 `somwork/`
 - [ ] `test/cluster/single_node_test.go` 骨架可运行（此时预期红，作为修复前的复现证据）
@@ -21,12 +25,15 @@
 
 - [ ] D4：改用 `kubeadm token create --print-join-command`，替代只取首行的 `extractJoinCommand`（SC-K03）
 - [ ] D5：CNI 部署 —— calico 与 flannel 各作为一条 `method: manifest` 资源（SC-K06/K07/K09）
-- [ ] D6：按 k8s 版本选 `--cri-socket`，≥1.24 拒绝 dockershim、启用 cri-dockerd（引用已有 `service/cri-docker.*`）（SC-K02/K15）
+- [x] D6（前半）：`containerRuntime: docker` 且版本 ≥ 1.24 时在校验阶段拒绝，报错点明 1.24 分界与两条出路（SC-K15）
+      顺带把 `configs/config.yaml` 里装不成的 `1.28.2 + docker` 示例改成 `containerd`
+- [ ] D6（后半）：启用 cri-dockerd（引用已有 `service/cri-docker.*`），届时把上面的拒绝放宽为
+      "缺 cri-dockerd 才拒绝"，并删掉错误文案里"somcli 尚不支持"那句（SC-K02）
 - [ ] F7：containerd `config.toml` 设 `SystemdCgroup = true`（SC-K01）
 - [ ] F8：写 `/etc/sysctl.d/k8s.conf`（`bridge-nf-call-iptables`、`ip_forward`）+ 内核模块（SC-K14）
 - [ ] F10（部分）：把 `configureFirewall` 纳入 k8s 流程
 - [ ] NodePort 从宿主可访问（SC-K10）
-- [ ] `test/local/cluster_kubernetes_test.go`：`SC_K15` socket 选择、join 命令解析（真实两行续行输出）
+- [ ] `test/local/cluster_kubernetes_test.go`：join 命令解析（真实两行续行输出）
 
 ## M2.3 外置结构（单独提交，最高风险点）
 
@@ -41,8 +48,11 @@
 
 ## M2.4 多 master / 生命周期 / Swarm / 清理
 
-- [ ] F9：`kubeadm init` 加 `--control-plane-endpoint` + `--upload-certs`，实现 `joinMaster`（SC-K04）
-- [ ] F9：无 VIP/LB 时明确拒绝并给出指引，local 组用例覆盖：配置声明 3 个 master 且无 VIP 时，`cluster create` 必须非 0 退出并给出指引（SC-K05）
+- [ ] F9：`kubeadm init` 加 `--upload-certs`，实现 `joinMaster`（SC-K04）
+      —— `--control-plane-endpoint` 已在 M2.1 接上（配置键 `controlPlaneEndpoint`），
+      但 `joinMaster` 仍是空壳，多 master 目前只是"不再假装成功"
+- [x] F9（前半）：无 VIP/LB 时明确拒绝并给出指引，local 组用例覆盖：配置声明 3 个 master 且无 VIP 时，
+      `cluster create` 在连节点之前非 0 退出并指名 `controlPlaneEndpoint`（SC-K05）
 - [ ] 版本矩阵 1.28 / 1.29 / 1.30（SC-K08）
 - [ ] `cluster remove` 后环境干净，无 `/etc/kubernetes` 残留（SC-K11）
 - [ ] 扩容新增 worker（SC-K12）、缩容 drain + delete + reset（SC-K13）
@@ -63,7 +73,8 @@
 
 ## 归档
 
-- [ ] changelog 补条目，配置键变更（`resources` 生效、`runtime`→`containerRuntime`）单列为 BREAKING
+- [ ] changelog 补条目，配置键变更（`resources` 生效、`runtime`→`containerRuntime`）单列为 BREAKING；
+      新增键 `controlPlaneEndpoint` 与"多 master 缺 VIP 由假成功改为拒绝"一并记入
 - [ ] `git mv changes/proposals/20260818-migrate-phase2-cluster-as-config/ changes/archive/`
 - [ ] `current-proposal` 切到 `20260818-migrate-phase3-platform-compat`
 

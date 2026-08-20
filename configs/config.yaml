@@ -117,7 +117,7 @@ cluster:
       version: "1.28.2"
       podNetworkCidr: "10.244.0.0/16"
       serviceCidr: "10.96.0.0/12"
-      containerRuntime: "docker"
+      containerRuntime: "containerd"
       imageRepository: "registry.aliyuncs.com/google_containers"
 
 images:

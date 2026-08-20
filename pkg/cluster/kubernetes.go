@@ -315,6 +315,13 @@ func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
 		config.Cluster.K8sConfig.ServiceCidr,
 	)
 
+	// 有稳定入口就交给 kubeadm：证书 SAN 与 admin.conf 都会指向它而不是这台机器的 IP。
+	// 只写在 init 上还不够让多 master 真的成立（joinMaster 仍是空壳），但少了这一句，
+	// 后来补上的 join 也接不到正确的地址。
+	if endpoint := strings.TrimSpace(config.Cluster.K8sConfig.ControlPlaneEndpoint); endpoint != "" {
+		initCmd += fmt.Sprintf(" --control-plane-endpoint=%s", endpoint)
+	}
+
 	// 添加容器运行时配置
 	runtime := config.Cluster.K8sConfig.ContainerRuntime
 	if runtime == "" {
@@ -613,6 +620,17 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 		return fmt.Errorf("至少需要一个主节点")
 	}
 
+	// 多 master 必须有一个不随单机存亡的 apiserver 入口，否则装出来的只会是个单点集群。
+	// 这件事在配置层面就能判定，必须在连节点之前拒绝：连上去之后再说不行，节点已经被改过了。
+	if masterCount > 1 && strings.TrimSpace(config.Cluster.K8sConfig.ControlPlaneEndpoint) == "" {
+		return fmt.Errorf("配置了 %d 个 master 却没有 controlPlaneEndpoint：\n"+
+			"多 master 需要一个稳定的 apiserver 入口（VIP 或负载均衡），"+
+			"证书与 kubeconfig 都要指向它；缺了它另外几个 master 无从加入，"+
+			"装出来的仍是单点集群。\n"+
+			"请在 k8sConfig 下补 controlPlaneEndpoint: \"<VIP 或 LB 地址>:6443\"，"+
+			"或只保留一个 master", masterCount)
+	}
+
 	if config.Cluster.K8sConfig.PodNetworkCidr == "" {
 		return fmt.Errorf("Pod网络CIDR不能为空")
 	}
@@ -621,7 +639,51 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 		return fmt.Errorf("服务CIDR不能为空")
 	}
 
+	// dockershim 在 k8s 1.24 从 kubelet 移除，而这里走的是 --cri-socket dockershim.sock
+	// （见 initK8sMaster）—— 1.24 以上必然连不上 CRI。不拒绝的话，失败会发生在装完 docker、
+	// 装完 kubeadm、跑到 kubeadm init 的时候：节点已经被改过一遍了。
+	if strings.ToLower(strings.TrimSpace(config.Cluster.K8sConfig.ContainerRuntime)) == "docker" {
+		major, minor, ok := parseK8sMinor(config.Cluster.K8sConfig.Version)
+		if !ok {
+			return fmt.Errorf("containerRuntime: docker 时必须写明 version（形如 1.23.17），"+
+				"当前为 %q：dockershim 在 1.24 已被移除，"+
+				"不知道版本就无法判断这套配置能不能装成",
+				config.Cluster.K8sConfig.Version)
+		}
+		if major > 1 || (major == 1 && minor >= 24) {
+			return fmt.Errorf("k8s %s 不能配 containerRuntime: docker：\n"+
+				"dockershim 在 1.24 已从 kubelet 移除，somcli 用的 "+
+				"--cri-socket unix:///var/run/dockershim.sock 在 1.24 及以上接不上。\n"+
+				"改用 containerRuntime: containerd，或把 version 降到 1.23.x；"+
+				"若必须用 docker，需要节点上先装 cri-dockerd 提供 CRI 端点（somcli 尚不支持）",
+				config.Cluster.K8sConfig.Version)
+		}
+	}
+
 	return nil
+}
+
+// parseK8sMinor 取版本号的主次版本：1.28.2 → (1, 28)。
+// 容忍 v 前缀与次版本上的后缀（1.24-rc.0），取不出数字就 ok=false —— 宁可说"看不懂"，
+// 也不要猜一个版本号出来替用户决定能不能装。
+func parseK8sMinor(version string) (int, int, bool) {
+	parts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(version), "v"), ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	minorField := parts[1]
+	if i := strings.IndexFunc(minorField, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
+		minorField = minorField[:i]
+	}
+	minor, err := strconv.Atoi(minorField)
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // 其他的master 上执行加入master

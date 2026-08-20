@@ -408,7 +408,7 @@ scenarios:
     files: [test/local/cluster_reject_test.go]
     defects: [F9]
     phase: 2
-    status: pending
+    status: done
 
   - id: SC-K06
     desc: CNI = calico，节点 Ready
@@ -488,7 +488,7 @@ scenarios:
     files: [test/local/cluster_reject_test.go]
     defects: [D6]
     phase: 2
-    status: pending
+    status: done
 
   # ---------- SC-S Swarm ----------
   - id: SC-S01

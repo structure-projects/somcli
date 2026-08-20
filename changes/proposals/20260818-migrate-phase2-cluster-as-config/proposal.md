@@ -112,3 +112,48 @@ k8s 安装当前**结构上不可能成功**：
 ## 任务清单
 
 详见 `tasks.md`。
+
+## 执行记录（与方案的偏差）
+
+### 偏差 1：先做 local 组的拒绝类用例，再搭 cluster 组骨架
+
+方案里 M2.1 的第一件事是 cluster 组 E2E 骨架。实际先落了 `test/local/cluster_reject_test.go`
+（SC-K05、SC-K15）。
+
+理由：cluster 组要跑真实 kubeadm，本机没有条件，用例写完也只能等流水线给结论 ——
+而"这份配置结构上就装不成"这件事的判断发生在连节点之前，本机就能给出可信信号。
+先把这一档做掉，等于在没有集群环境的机器上也拿到了两条真结论，且它们正是
+D6 与 F9 的**可本机证伪**部分。cluster 组骨架仍在 M2.1 范围内，顺序调整不改内容。
+
+「先建断言、再动结构」的次序没有被破坏：这两条用例写完先跑成红（三红两绿），
+再改产品让它们变绿。
+
+### 偏差 2：新增配置键 `k8sConfig.controlPlaneEndpoint`
+
+原「兼容性保证」只列了 `resources` 生效与 `runtime`→`containerRuntime`，没有这一项。
+SC-K05 要求"多 master 无 VIP 时拒绝并给出指引"，指引必须指向一个真实存在的键，
+因此这个键在 M2.1 就得定下来，而不是等 M2.4。
+
+- 不是 BREAKING：新增可选键，单 master 留空即可，老配置逐字不变仍然可用。
+- 但**有行为变化**：此前"三个 master 无 VIP"会装完所有节点、init 第一个 master、
+  对另外两个打一句 warning 后宣布成功（用户以为自己有 HA），现在在动手前直接拒绝。
+  这是把假成功换成明确失败，方向上是修 F9 的前半。
+- `kubeadm init` 已接上 `--control-plane-endpoint`（证书 SAN 与 admin.conf 需要它），
+  但 `joinMaster` 仍是空壳 —— **多 master 目前仍装不成，只是不再假装成功**。
+  真正让另外几个 master 加入属于 M2.4（含 `--upload-certs` 与证书密钥传递）。
+
+### 偏差 3：D6 在本阶段只兑现"拒绝"，不兑现 cri-dockerd
+
+目标状态里写了"cri-dockerd 是一条资源，按 k8s 版本选 socket"。本阶段的实现是：
+`containerRuntime: docker` 且版本 ≥ 1.24 时**在配置校验阶段拒绝**，报错点明 1.24 分界、
+dockershim 已移除、以及两条出路（改 containerd / 装 cri-dockerd）。
+
+理由：cri-dockerd 作为资源要等 M2.3 的外置（`configs/k8s/*.yaml`）才有落点；
+在那之前，不拒绝就意味着用户会装完 docker、装完 kubeadm，在 `kubeadm init` 那一步失败，
+机器已经被改过一遍。拒绝是代价最小的正确行为。
+
+M2.3 支持 cri-dockerd 之后，这条拒绝要相应放宽为"缺 cri-dockerd 才拒绝"，
+错误文案里"somcli 尚不支持"那句必须同步删掉 —— 否则会变成一句过期的谎话。
+
+顺带修了 `configs/config.yaml`：示例集群段写的正是 `1.28.2` + `docker`，
+也就是随产品发布的示例配置本身结构上装不成。已改为 `containerd`。
