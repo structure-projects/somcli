@@ -60,7 +60,7 @@
 ## 归档
 
 - [x] changelog 补 `0.3.1-alpha` 条目
-- [ ] 通过 expert-review（产出 `review.md`）
+- [x] 通过 expert-review（`review.md`：1 条 MUST 已修 —— `tildeKey` 在 CI 上也会静默 skip）
 - [ ] 通过 ci-gate（两条流水线全绿）
 - [ ] `git mv` 到 `changes/archive/`，`current-proposal` 切到 phase 2
 - [ ] 推送需用户确认

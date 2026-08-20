@@ -100,17 +100,29 @@ resources:
 // tildeKey 把探测用的私钥换算成 ~ 形式写进配置。
 //
 // 不直接用 tg.key：SOMCLI_TEST_SSH_KEY 可以被设成绝对路径，那样这条用例会悄悄退化成
-// "绝对路径能用"，与要验的东西无关。钥匙不在 HOME 下就明确 skip，不装作验过了。
+// "绝对路径能用"，与要验的东西无关。钥匙不在 HOME 下就不装作验过了。
+//
+// CI 上按 sshTarget 的同一条规矩硬失败而不是跳过：那里的私钥由流水线自己生成在
+// ~/.ssh/id_rsa，构造不出 ~ 形式只可能是准备步骤坏了。默默跳过的话，
+// 一条 matrix 里标成 done 的场景实际什么都没跑。
 func tildeKey(t *testing.T, tg target) string {
 	t.Helper()
 
+	giveUp := func(format string, args ...any) {
+		t.Helper()
+		if os.Getenv("CI") != "" {
+			t.Fatalf(format+"\nCI 里这不是环境不具备，而是准备步骤坏了", args...)
+		}
+		t.Skipf(format, args...)
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Skipf("取不到 HOME，无法构造 ~ 形式的 sshKey: %v", err)
+		giveUp("取不到 HOME，无法构造 ~ 形式的 sshKey: %v", err)
 	}
 	rel, err := filepath.Rel(home, expand(tg.key))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		t.Skipf("私钥 %s 不在 HOME(%s) 下，构造不出 ~ 形式；本条要验的正是 ~ 展开",
+		giveUp("私钥 %s 不在 HOME(%s) 下，构造不出 ~ 形式；本条要验的正是 ~ 展开",
 			expand(tg.key), home)
 	}
 	return "~/" + filepath.ToSlash(rel)
