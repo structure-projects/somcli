@@ -138,11 +138,11 @@
 
 ## 提交与推送
 
-- [ ] 通过 ci-gate
-      本机等价检查全过：`gofmt -l` 空、`go vet ./...` 空、`go build ./...` 通过、
-      test/ 的 import 守卫按 ci.yml 第 49 行的原命令跑过、`go test ./...` 与
-      `-tags=remote` 全绿（multinode 本机无 docker 整包跳过）。
-      **流水线本身尚未跑** —— 需推送后由 CI 复核，等指令
+- [x] 通过 ci-gate
+      CI `32389626152` 全绿（静态检查 + 三平台功能验证 + 六个交叉编译目标），
+      Integration `32389626041` 全绿（多节点 7 场景 + 远程 SC-E03）。
+      首次推送三平台同红，原因是 SC-X08 用例自身的数据竞争（本机不带 `-race` 漏检），
+      见「执行期偏差记账」最后一节
 - [x] commit message 符合 Conventional Commits
 - [x] 分支为 ~~`feat-engine-completion`~~ `feat-arch-convergence`（见「执行期偏差记账」）
-- [ ] 推送需用户确认
+- [x] 推送需用户确认 —— 已获指令并推送（`9c8bd49`）

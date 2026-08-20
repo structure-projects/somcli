@@ -14,10 +14,15 @@
 
 ## 里程碑
 
-- [ ] **M0** `20260818-migrate-phase0-trusted-signal`：建立可信信号，22 个场景 done
+- [x] **M0** `20260818-migrate-phase0-trusted-signal`：建立可信信号，22 个场景 done
       验收：失败路径退出码非 0 且日志无 `✓`；`somcli <任意命令> --help` 无文件系统与网络副作用
-- [ ] **M1** `20260818-migrate-phase1-engine-completion`：引擎补全，累计 49 场景 done
+      已归档（`changes/archive/`）
+- [x] **M1** `20260818-migrate-phase1-engine-completion`：引擎补全，累计 ~~49~~ **47** 场景 done
       验收：`🕳 空壳` 与 `❌ 不可用` 命令计数归零；每个新增能力都有跑真二进制的用例
+      已归档。累计 47 而非 49：phase 1 的 28 个场景里 5 条保持 `pending`（SC-M02 / SC-C01 /
+      SC-C02 各只兑现了声明的两个环境之一，SC-D10 / SC-F03 缺一台真实远程主机）。
+      缺的是环境而非实现，逐条理由见该提案的「执行期偏差记账」与 `review.md`。
+      **M2 的"累计 70"因此顺延为 68**，或在 M2 期间补上这 5 条再回到 70
 - [ ] **M2** `20260818-migrate-phase2-cluster-as-config`：集群归位，累计 70 场景 done
       验收：`pkg/cluster` 内 `types.Resource` 字面量为 0；E2E 单节点矩阵全绿 + 双节点 Join 通过
 - [ ] **M3** `20260818-migrate-phase3-platform-compat`：平台兼容，累计 82 场景 done
