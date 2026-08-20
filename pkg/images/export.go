@@ -38,22 +38,28 @@ func Export(config Config) error {
 		return err
 	}
 
-	outputPath := filepath.Join(config.OutputFile)
+	outputPath := config.OutputFile
 	file, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %v", err)
 	}
-	defer file.Close()
 
 	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
-
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 
-	tempDir := filepath.Join("temp-export")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
+	// 半截归档比没有归档更危险：它看着像个能用的离线包，要等到目标机上 import 才暴露。
+	// 所以任何失败都连带删掉产物 —— 与 F14 的"有失败就不写镜像清单"是同一条判据。
+	discard := func(cause error) error {
+		_ = tarWriter.Close()
+		_ = gzipWriter.Close()
+		_ = file.Close()
+		_ = os.Remove(outputPath)
+		return cause
+	}
+
+	tempDir, err := newTempDir("export-")
+	if err != nil {
+		return discard(err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -76,7 +82,20 @@ func Export(config Config) error {
 	}
 
 	if err := failed.err("export", len(images)); err != nil {
-		return err
+		return discard(err)
+	}
+
+	// Close 必须逐层检查：真正把剩余数据刷进文件的正是 gzip 的 Close，
+	// 用 defer 忽略它的返回值等于把"磁盘满"写成"导出成功"。
+	if err := tarWriter.Close(); err != nil {
+		return discard(fmt.Errorf("failed to finalize tar stream: %v", err))
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return discard(fmt.Errorf("failed to finalize gzip stream: %v", err))
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(outputPath)
+		return fmt.Errorf("failed to close output file: %v", err)
 	}
 
 	logrus.Infof("Images exported to: %s", outputPath)

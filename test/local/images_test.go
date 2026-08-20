@@ -16,6 +16,8 @@ limitations under the License.
 package local
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -143,5 +145,68 @@ func TestF14_PullFailsWhenDockerMissing(t *testing.T) {
 		"images", "pull", "-f", list)
 	if code == 0 {
 		t.Fatalf("没有 docker 却退出 0，输出：\n%s", out)
+	}
+}
+
+// R1：归档里的条目名不得把文件写到解压目录之外（CWE-22，评审新发现）。
+//
+// 离线镜像包是在机器之间传递的外部输入，而 somcli 多数场景以 root 运行：
+// 一个条目名写成 ../../../etc/cron.d/x，"导入镜像"就成了往任意路径写攻击者提供的内容。
+// 判据不看退出码 —— 没有 docker 时导入本来就非 0 退出，那样的绿说明不了任何事情；
+// 唯一的判据是标记文件有没有被创建出来。
+func TestR1_ImportRejectsPathTraversalEntries(t *testing.T) {
+	marker, err := os.MkdirTemp("/tmp", "somcli-zipslip-")
+	if err != nil {
+		t.Fatalf("创建标记目录失败: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(marker) })
+
+	victim := filepath.Join(marker, "PWNED.txt")
+	// 40 层 ../ 足以从任意深度的解压目录退到根，filepath.Join 会在根上截住，
+	// 于是无论 workdir 有多深，条目都精确落在 victim 这个绝对路径上
+	entry := strings.Repeat("../", 40) + strings.TrimPrefix(victim, "/")
+
+	archive := filepath.Join(t.TempDir(), "evil.tar.gz")
+	writeTarGz(t, archive, entry, "PWNED\n")
+
+	_, out := run(t, "images", "import", "-i", archive)
+
+	if _, err := os.Stat(victim); err == nil {
+		t.Fatalf("归档条目越出解压目录，写出了 %s：\n%s", victim, out)
+	}
+	if !strings.Contains(out, "越出") && !strings.Contains(out, "PWNED.txt") {
+		t.Fatalf("拒绝了却没说清是哪个条目有问题，输出：\n%s", out)
+	}
+}
+
+// writeTarGz 造一个只含单个条目的 .tar.gz，条目名由调用方指定（含非法名字）。
+func writeTarGz(t *testing.T, path, name, content string) {
+	t.Helper()
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("创建归档失败: %v", err)
+	}
+	defer f.Close()
+
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	hdr := &tar.Header{
+		Name:     name,
+		Size:     int64(len(content)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("写归档头失败: %v", err)
+	}
+	if _, err := tw.Write([]byte(content)); err != nil {
+		t.Fatalf("写归档内容失败: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("关闭 tar 失败: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("关闭 gzip 失败: %v", err)
 	}
 }

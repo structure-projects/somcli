@@ -115,13 +115,19 @@
 - [ ] SC-D10 / SC-F03：remote 组用例
 - [ ] SC-C01 的 multinode 半边：真装一次 docker 需要 docker-in-docker，三节点夹具做不到
 - [ ] SC-C02 的 `matrix` 半边：`{{.UnameArch}}` 的价值在 arm64 上不 404，CI 现在只跑 amd64
-- [ ] images `export` 失败时残留的半截 `.tar.gz` 未清理
+- [x] ~~images `export` 失败时残留的半截 `.tar.gz` 未清理~~ → 收口评审 R3 已修
 
 ## 评审
 
-- [ ] 通过 expert-review（产出 `review.md`）
-- [ ] 修复所有 MUST fix 项
-- [ ] SHOULD fix 项已评估
+- [x] 通过 expert-review（产出 `review.md`）
+      `gin-reviewer` 子代理初筛 16 条，8 条自行撤回；余下 8 条逐条核实：2 证实、4 驳回、2 降 NIT。
+      唯一的 MUST（R1）是子代理没报、核实 SHOULD 时顺带读出来的
+- [x] 修复所有 MUST fix 项
+      R1：`images import` 的 zip-slip（CWE-22）。修复 + `TestR1_ImportRejectsPathTraversalEntries`，
+      已在 `f07cd5f` 上确认变红（标记文件被真的写出来了）
+- [x] SHOULD fix 项已评估
+      R2（临时目录落在 CWD）、R3（`Close` 错误被吞、半截归档报成功）两条都直接修了；
+      两条都无黑盒判据（`defer` 会清掉目录 / 需模拟磁盘满），不补用例的理由写在 `review.md`
 
 ## 归档
 

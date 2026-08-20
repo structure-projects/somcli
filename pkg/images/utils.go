@@ -24,6 +24,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/structure-projects/somcli/pkg/types"
+	"github.com/structure-projects/somcli/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 
@@ -184,6 +185,22 @@ func formatImageName(img Image, repo string) string {
 		return fmt.Sprintf("%s:%s", img.Name, img.Tag)
 	}
 	return fmt.Sprintf("%s/%s:%s", repo, img.Name, img.Tag)
+}
+
+// newTempDir 在 <workdir>/tmp 下开一个独占的临时目录。
+//
+// 此前写作 filepath.Join("temp-export")，即相对**当前目录** —— 于是 --workdir 被忽略、
+// 用户的工作目录里凭空多出一个 temp-export，两个并行的 somcli 还会互相覆盖中间产物。
+func newTempDir(prefix string) (string, error) {
+	root := utils.GetWorkTmpDir()
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return "", fmt.Errorf("创建临时目录父目录 %s 失败: %w", root, err)
+	}
+	dir, err := os.MkdirTemp(root, prefix)
+	if err != nil {
+		return "", fmt.Errorf("创建临时目录失败: %w", err)
+	}
+	return dir, nil
 }
 
 // failures 收集逐张镜像的失败。整批操作不因单张失败而中断（一次 pull 几十张，

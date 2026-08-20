@@ -22,10 +22,35 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/structure-projects/somcli/pkg/utils"
 )
+
+// secureJoin 把归档内的条目名解到 dir 之内，越界的名字一律拒绝。
+//
+// 归档是外部输入（离线镜像包常在机器之间传递），而 somcli 多数场景以 root 运行：
+// 一个条目名写成 ../../etc/cron.d/x 就足以让"导入镜像"变成往任意路径写攻击者提供的内容。
+// 判据取 filepath.Rel 的结果而不是看名字里有没有 ".."：后者既会漏掉 a/../../b 这类
+// 绕过写法，也会误伤名字里恰好含 ".." 的正常文件。
+func secureJoin(dir, name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("归档条目名为空")
+	}
+	if filepath.IsAbs(name) || strings.HasPrefix(filepath.ToSlash(name), "/") {
+		return "", fmt.Errorf("归档条目名不能是绝对路径: %s", name)
+	}
+	joined := filepath.Join(dir, name)
+	rel, err := filepath.Rel(dir, joined)
+	if err != nil {
+		return "", fmt.Errorf("归档条目名不合法: %s", name)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("归档条目越出解压目录: %s", name)
+	}
+	return joined, nil
+}
 
 func Import(config Config) error {
 	if err := validateScope(config.Scope); err != nil {
@@ -47,9 +72,9 @@ func Import(config Config) error {
 
 	tarReader := tar.NewReader(gzipReader)
 
-	tempDir := filepath.Join("temp-import")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
+	tempDir, err := newTempDir("import-")
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -64,11 +89,16 @@ func Import(config Config) error {
 			return fmt.Errorf("failed to read tar entry: %v", err)
 		}
 
-		if header.Typeflag == tar.TypeDir {
+		// 只收常规文件：docker load 要的就是归档里的 .tar。目录、软链接、设备节点
+		// 一律跳过 —— 尤其软链接，收下之后后一个条目可以顺着它写到解压目录之外。
+		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 
-		tempFile := filepath.Join(tempDir, header.Name)
+		tempFile, err := secureJoin(tempDir, header.Name)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(tempFile), 0755); err != nil {
 			return fmt.Errorf("failed to create directory for image: %v", err)
 		}

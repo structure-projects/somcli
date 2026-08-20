@@ -493,6 +493,29 @@ SC-F14「全部成功时写清单且退 0」（锁的是正常路径没被聚合
 累计 47 done。不是把标准改松，而是把"还差什么"写在明面上：这 5 条的缺口分别需要
 多发行版矩阵、docker-in-docker、arch 矩阵、以及一台真实远程主机，都不是本阶段能补齐的。
 
+### 收口评审：提案外新增三处修复（R1 / R2 / R3）
+
+expert-review 阶段查出三处提案里没有编号的缺陷，全部落在 `pkg/images/`（M1.4 因 F14 已经在改这两个文件）：
+
+- **R1（MUST，安全）`images import` 的路径穿越（CWE-22）**：`filepath.Join(tempDir, header.Name)`
+  直接采信归档内的条目名，`../../../etc/cron.d/x` 这样的名字会把攻击者提供的内容写到临时目录之外。
+  离线镜像包是设计上要在机器之间传递的外部输入，somcli 的典型身份是 root，且写入发生在
+  `docker load` **之前** —— 目标机上有没有 docker 都不影响利用。已实测复现并修复，
+  补 `TestR1_ImportRejectsPathTraversalEntries`（在 `f07cd5f` 上确认变红）。
+- **R2（SHOULD）临时目录 `temp-import` / `temp-export` 相对当前目录**：`--workdir` 被忽略，
+  与 D10 是同一类病症，故一并修掉（改 `<workdir>/tmp` + `os.MkdirTemp`）。
+- **R3（SHOULD）`export` 的 `Close` 错误被 `defer` 吞掉**：磁盘满会落一个半截 `.tar.gz`
+  并报"导出成功"。逐层检查 `Close` 并在失败时删产物，判据与 F14 的"有失败就不写镜像清单"一致。
+  这条同时关掉了 changelog 里原本列为「已知欠账」的"残留半截 `.tar.gz`"。
+
+**为什么当场修而不是留给 phase 2**：R1 是安全缺陷，把它记成欠账等于知情不改；R2/R3 都在
+F14 已经改动的两个文件里，各不到 20 行，分开提交只会让 diff 更难读。三条都写进了 changelog
+（R1 单列 Security 段）。
+
+**已知弱项**：R2/R3 没有黑盒用例 —— `defer os.RemoveAll` 让"临时目录建在哪"在进程外不可观测，
+`Close` 失败要模拟磁盘满。现有夹具（`runEnvIn` 只给 env 与 workdir）也没有设置 CWD 的入口。
+为一条 SHOULD 改夹具不值得，改生产代码求可测性违反项目约定，故明确记在 `review.md` 里而非含糊带过。
+
 ## 双规范并存期约定
 
 - 老代码：`pkg/cluster/kubernetes.go` 本里程碑不重构（M2 处理），仅在其消费引擎新能力时做最小适配。
