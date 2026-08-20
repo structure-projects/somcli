@@ -139,6 +139,10 @@
 ## 提交与推送
 
 - [ ] 通过 ci-gate
-- [ ] commit message 符合 Conventional Commits
+      本机等价检查全过：`gofmt -l` 空、`go vet ./...` 空、`go build ./...` 通过、
+      test/ 的 import 守卫按 ci.yml 第 49 行的原命令跑过、`go test ./...` 与
+      `-tags=remote` 全绿（multinode 本机无 docker 整包跳过）。
+      **流水线本身尚未跑** —— 需推送后由 CI 复核，等指令
+- [x] commit message 符合 Conventional Commits
 - [x] 分支为 ~~`feat-engine-completion`~~ `feat-arch-convergence`（见「执行期偏差记账」）
 - [ ] 推送需用户确认
