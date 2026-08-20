@@ -1,0 +1,56 @@
+# 两个 systemd 节点（1 master + 1 worker），供 test/cluster 使用。
+#
+# 与 multinode 那套 sshd 容器的区别只有一个：这里的节点要真的能跑 kubelet，
+# 因此 systemd 是 PID 1、容器是 privileged、cgroup 用宿主命名空间。
+#
+# 固定 IP 而非映射端口：somcli 的 SSH 调用写死 22 端口，节点必须各自有一个
+# 从宿主机可直连的地址。因此这套 fixture 只在 Linux 上可用（载体是 e2e.yml）。
+#
+# 起停由 test/cluster 的 TestMain 负责。
+services:
+  k8s-master:
+    build: .
+    container_name: somcli-k8s-master
+    hostname: k8s-master
+    # kubelet 要挂载、要写 cgroup、要 modprobe —— 这些在非特权容器里一律做不到。
+    privileged: true
+    # cgroup 用宿主命名空间：kubelet 与 containerd 认的是自己看到的 cgroup 路径，
+    # 私有命名空间下两边对不上，Pod 起不来。
+    cgroup: host
+    # systemd 要求 /run 是 tmpfs；从镜像层继承的 /run 里有构建期残留。
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      # 内核是宿主的，modprobe 也得看宿主的模块树，否则 br_netfilter / overlay 加载不上。
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      somcli-k8s:
+        ipv4_address: 172.29.0.11
+
+  k8s-worker:
+    build: .
+    container_name: somcli-k8s-worker
+    hostname: k8s-worker
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      somcli-k8s:
+        ipv4_address: 172.29.0.12
+
+networks:
+  somcli-k8s:
+    driver: bridge
+    ipam:
+      config:
+        # 与 multinode 的 172.28.0.0/16 错开，两套 fixture 可以同时起着。
+        - subnet: 172.29.0.0/16

@@ -13,13 +13,14 @@
 
 - [x] `test/local/cluster_reject_test.go`：拒绝类用例（SC-K05、SC-K15），写完先跑成三红两绿再改产品
       —— 见 proposal「偏差 1」，这一档提到 cluster 骨架之前做，因为它是本机唯一能给出可信集群信号的部分
-- [ ] `hack/mkclusterconfig`：按 `--k8s/--runtime/--cni/--node/--ssh-key` 生成集群配置
-- [ ] `test/cluster/` 建包，build tag **`cluster`**（不是 `e2e`：与 `test/matrix.yaml` 的 `env: [cluster]`
-      以及现有 `remote`/`multinode` 的"标签同目录名"惯例对齐；下文第 55 行的写法为准，
-      proposal 与本文件第 15 行原写的 `e2e` 作废）
-- [ ] `test/fixtures/k8s-nodes/compose.yaml`：privileged systemd 容器（1 master + 1 worker）
-- [ ] `.github/workflows/e2e.yml`：nightly + `workflow_dispatch`，失败时收集 kubelet/containerd 日志与 `somwork/`
-- [ ] `test/cluster/single_node_test.go` 骨架可运行（此时预期红，作为修复前的复现证据）
+- [x] ~~`hack/mkclusterconfig`~~ 不做，改由用例自己写配置并打印路径与内容（见 proposal「偏差 4」）
+- [x] `test/cluster/` 建包，build tag **`cluster`**（不是 `e2e`：与 `test/matrix.yaml` 的 `env: [cluster]`
+      以及现有 `remote`/`multinode` 的"标签同目录名"惯例对齐；proposal 与本文件原写的 `e2e` 作废）
+- [x] `test/fixtures/k8s-nodes/`：privileged systemd 容器（1 master + 1 worker）
+- [x] `.github/workflows/e2e.yml`：nightly + `workflow_dispatch`，失败时收集 kubelet/containerd 日志
+- [x] `test/cluster/single_node_test.go`（SC-K01）骨架可运行（此时预期红，作为修复前的复现证据）
+- [x] `ci.yml` 补 `go vet -tags=…`：三个带标签的测试组不在 `go vet ./...` 视野里，
+      写错一个字最坏要等到第二天早上（e2e 每晚一次）才知道
 
 ## M2.2 修行为（k8s 第一次真的能装上）
 

@@ -37,6 +37,15 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # 带 build tag 的三组不在 go vet ./... 的视野里，而它们各自的载体是
+      # integration.yml（分钟级）与 e2e.yml（每晚）。不在这里编一遍的话，
+      # test/cluster 写错一个字，最坏要到第二天早上才知道。
+      - name: go vet（带 build tag 的测试组）
+        run: |
+          go vet -tags=remote ./test/remote/...
+          go vet -tags=multinode ./test/multinode/...
+          go vet -tags=cluster ./test/cluster/...
+
       - name: yamllint configs
         run: pipx install yamllint && yamllint -d relaxed configs/
 

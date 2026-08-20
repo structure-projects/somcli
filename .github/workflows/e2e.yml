@@ -1,0 +1,67 @@
+# 真正把 k8s 装一遍。
+#
+# 这条流水线回答的是别处回答不了的问题：集群装成功了没有。test/local 只能验
+# "装不成的配置被拦住"，test/multinode 的节点没有 systemd、跑不了 kubelet。
+#
+# 不挂在 push 上：一次要装 containerd + kubeadm 再跑 kubeadm init，几十分钟量级，
+# 且 M2.2 的行为修复完成之前**预期是红的**（红在哪一层就说明哪个缺陷还在，
+# 见 test/cluster/single_node_test.go 的注释）。挂在 push 上只会让所有人习惯性无视红灯。
+# 所以：每晚一次 + 手动触发。等 M2.2 转绿之后再考虑并入 PR 门禁。
+name: E2E 集群
+
+on:
+  schedule:
+    # 03:17 UTC。避开整点：整点是所有人的默认，排队最久。
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  single-node:
+    name: 单 master 真实安装 (SC-K01)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: 自检 docker 可用
+        run: docker info --format '{{.ServerVersion}}' && docker compose version
+
+      # 节点是容器，用的是宿主的内核。因此下面这三件事只能在宿主上做，
+      # 节点里做不到，也不该算在 somcli 头上：
+      #   swap —— kubeadm 读 /proc/swaps，那是宿主全局的，容器里关不掉；
+      #   内核模块 —— 容器共享宿主内核，模块没加载的话节点里连对应的 sysctl 都不存在；
+      #   （somcli 该做的是在节点上写 sysctl 与 modprobe，那部分由 SC-K01 断言，不在这里代劳）
+      - name: 准备宿主内核前置
+        run: |
+          set -eux
+          sudo swapoff -a
+          sudo modprobe br_netfilter
+          sudo modprobe overlay
+          cat /proc/swaps
+          lsmod | grep -E 'br_netfilter|overlay'
+
+      # 容器由 test/cluster 的 TestMain 起停（fixture 见 test/fixtures/k8s-nodes）。
+      # KEEP=1 让失败后容器还在，下一步才能把节点现场捞出来 —— runner 是一次性的。
+      - name: 测试
+        env:
+          SOMCLI_CLUSTER_KEEP: '1'
+        run: go test -tags=cluster ./test/cluster/... -count=1 -v -timeout 45m
+
+      # 用例自己会在失败时打 kubelet / containerd 现场（dumpNodeLogs）。
+      # 这里再补一层：TestMain 阶段就失败的话，用例根本没跑到。
+      - name: 失败时收集节点日志
+        if: failure()
+        run: |
+          docker compose -f test/fixtures/k8s-nodes/compose.yaml logs --no-color || true
+          docker compose -f test/fixtures/k8s-nodes/compose.yaml ps || true
+
+      - name: 清理容器
+        if: always()
+        run: docker compose -f test/fixtures/k8s-nodes/compose.yaml down -v --remove-orphans || true

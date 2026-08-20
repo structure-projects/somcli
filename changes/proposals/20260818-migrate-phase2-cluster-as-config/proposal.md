@@ -157,3 +157,39 @@ M2.3 支持 cri-dockerd 之后，这条拒绝要相应放宽为"缺 cri-dockerd 
 
 顺带修了 `configs/config.yaml`：示例集群段写的正是 `1.28.2` + `docker`，
 也就是随产品发布的示例配置本身结构上装不成。已改为 `containerd`。
+
+### 偏差 4：不做 `hack/mkclusterconfig`
+
+方案里列了这个生成器，用意是"手工复现一次 E2E 的安装"。实际不做。
+
+理由：`test/` 不能 import 本仓库的包，所以生成器与用例只能各写一份配置，两份必然漂移 ——
+到时候手工复现出来的是生成器的配置，不是用例真正喂给 somcli 的那一份，复现的意义就没了。
+改为用例自己写配置，并把**路径与全文**打进测试输出（`clusterConfig`）；
+要复现就拿那份配置直接喂 somcli。
+
+### 偏差 5：cluster 组的 build tag 定为 `cluster`，不是 `e2e`
+
+方案正文写 `e2e`，`tasks.md` 里两处写法不一致（一处 `e2e`、一处 `-tags=cluster`），
+`test/matrix.yaml` 用的是 `env: [cluster]`。统一取 **`cluster`**：
+与目录名、与 matrix 的 env 名一致，也延续 `remote` / `multinode` 的"标签同目录名"惯例。
+`e2e` 这个名字只留给流水线文件名（`e2e.yml`）。
+
+### 偏差 6：`ci.yml` 增加带标签测试组的 `go vet`（方案未列）
+
+`go vet ./...` 看不见带 build tag 的包。`test/cluster` 的载体是每晚一次的 e2e.yml，
+写错一个字最坏要到第二天早上才知道；`test/remote` / `test/multinode` 同理只有
+integration.yml 一个入口。因此在 `ci.yml` 的静态检查里补三条 `go vet -tags=…`，
+让编译期错误在 push 时就暴露。这不改产品行为，只是让信号来得及时。
+
+### E2E 前置：宿主上做的三件事
+
+节点是共享宿主内核的容器，因此下面三件事只能在 `e2e.yml` 里对宿主做，
+**不是** somcli 该做的事，也不能算进它的验收：
+
+- `swapoff -a`：kubeadm 读的 `/proc/swaps` 是宿主全局的，容器里关不掉；
+- `modprobe br_netfilter overlay`：模块没在宿主加载，节点里连对应的 sysctl 都不存在；
+- cgroup 用宿主命名空间（compose 的 `cgroup: host`）：私有命名空间下 kubelet 与
+  containerd 看到的 cgroup 路径对不上，Pod 起不来。
+
+somcli 该做的是在**节点上**写 `/etc/sysctl.d/k8s.conf` 与加载模块（F8），
+这一条由 SC-K01 单独断言，不能被上面的宿主准备顶替掉。
