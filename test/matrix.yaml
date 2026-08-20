@@ -285,10 +285,13 @@ scenarios:
     phase: 1
     status: done
 
+  # 从 remote 挪到 multinode：remote 组的"远端"是回环别名 127.0.0.2，与操作机
+  # 同一个文件系统 —— 源文件和目标文件是同一个文件，hash 永远相等，用例必绿且
+  # 什么都没验。只有三节点这样文件系统真正分离，"传过去了"与"没再传"才分得开。
   - id: SC-D10
     desc: 远程已存在同 hash 文件则跳过传输
-    env: [remote]
-    files: [test/remote/dispatch_test.go]
+    env: [multinode]
+    files: [test/multinode/dispatch_test.go]
     defects: [F6]
     phase: 1
     status: pending
@@ -521,6 +524,11 @@ scenarios:
     status: pending
 
   # ---------- SC-C 周边子系统 ----------
+  # multinode 那一半兑现不了，本条继续 pending：somcli docker install 调外部
+  # docker-manager.sh，它的必经步骤里有 start_service（systemctl daemon-reload /
+  # enable / start），任一步失败就 exit 1。sshd 容器里没有 PID 1 的 systemd，
+  # privileged: true 也不会凭空长出一个 —— 装到那一步必然失败，后面什么都断言不到。
+  # 要真正兑现得先把 docker 安装从 shell 脚本收进 Go（阶段 2 之后的事）。
   - id: SC-C01
     desc: docker 安装 / 指定版本 / 卸载
     env: [local, multinode]

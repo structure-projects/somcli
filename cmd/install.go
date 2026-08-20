@@ -30,6 +30,7 @@ var (
 	installConfigFile   string
 	installToolName     string
 	installForce        bool
+	installSudo         bool
 	installParallel     int
 	uninstallConfigFile string
 	uninstallToolName   string
@@ -55,6 +56,10 @@ The ` + "`method`" + ` field selects how the resource is actually installed:
 
 A resource is skipped when its check: probe exits 0, or when state.json already
 records it at the declared version. Bump version:, or pass --force, to re-apply.
+
+` + "`method: package`" + ` needs administrator rights on the target machine. Pass
+--sudo to prefix the package manager command with sudo; it is off by default, so
+without it the generated command is exactly what it has always been.
 ` + "`on_error: continue`" + ` keeps the run going past a failed resource (the exit
 code is still non-zero); the default aborts at the first failure.`,
 	Example: `  # Batch install from config
@@ -89,10 +94,13 @@ func init() {
 		"Re-apply resources even if check: hits or state.json already records them")
 	installCmd.Flags().IntVar(&installParallel, "parallel", 1,
 		"Run each script on up to N hosts concurrently (per-resource, hosts only)")
+	installCmd.Flags().BoolVar(&installSudo, "sudo", false,
+		"Prefix the package manager command with sudo (method: package only)")
 
 	// --force 与 --parallel 只挂在 install 上：uninstall 是拆环境，并发拆与
 	// "强制再拆一遍"都没有已验证的用例，挂上去就是又一个没人走过的分支
 	viper.BindPFlag("parallel", installCmd.Flags().Lookup("parallel"))
+	viper.BindPFlag("sudo", installCmd.Flags().Lookup("sudo"))
 
 	rootCmd.AddCommand(uninstallCmd)
 	uninstallCmd.Flags().StringVarP(&uninstallConfigFile, "file", "f", "", "Config file path (required)")

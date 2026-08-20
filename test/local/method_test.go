@@ -324,6 +324,109 @@ resources:
 	}
 }
 
+// TestSC_M02_SudoOffByDefault 不加 --sudo 时生成的命令与从前一模一样，不含提权。
+//
+// 这是"加 --sudo 不是破坏性变更"的证据：默认路径上 sudo 一次都不该被调用。
+func TestSC_M02_SudoOffByDefault(t *testing.T) {
+	logDir := t.TempDir()
+	aptLog := filepath.Join(logDir, "apt.log")
+	sudoLog := filepath.Join(logDir, "sudo.log")
+
+	bin := fakeBinDir(t, map[string]string{
+		"apt-get": recorderScript(aptLog),
+		"sudo":    recorderScript(sudoLog),
+	})
+
+	cfg := writeConfig(t, `
+resources:
+  - name: jq
+    method: "package"
+`)
+
+	code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + bin}, "install", "-f", cfg)
+	if code != 0 {
+		t.Fatalf("退出码 = %d，输出：\n%s", code, out)
+	}
+
+	got := strings.TrimSpace(readFile(t, aptLog))
+	if !strings.Contains(got, "install") || !strings.Contains(got, "jq") {
+		t.Fatalf("apt-get 收到的参数 = %q，期望包含 install 与 jq", got)
+	}
+	if _, err := os.Stat(sudoLog); !os.IsNotExist(err) {
+		t.Errorf("没加 --sudo 却调用了 sudo（默认行为被改了），sudo 收到：%q",
+			strings.TrimSpace(readFile(t, sudoLog)))
+	}
+}
+
+// TestSC_M02_SudoPrefixesPackageManager 加了 --sudo，提权前缀要落在生成的命令上。
+//
+// 前缀必须加在生成的 shell 里 —— 提权发生在目标节点上，与操作机上跑 somcli 的是谁无关。
+// 断言 sudo 收到的参数：apt-get 那条带前置环境变量，正确写法是 sudo env VAR=v apt-get ...，
+// 写成 sudo VAR=v apt-get 的话 sudo 会把 VAR=v 当成要执行的命令，装包必失败。
+func TestSC_M02_SudoPrefixesPackageManager(t *testing.T) {
+	logDir := t.TempDir()
+	aptLog := filepath.Join(logDir, "apt.log")
+	sudoLog := filepath.Join(logDir, "sudo.log")
+
+	// 假 sudo 记完就把余下的命令真跑起来，这样"整条链子接得上"也一并验到。
+	// PATH 里保留真实目录：env 由 sudo 那条命令用到，它不是被测对象。
+	bin := fakeBinDir(t, map[string]string{
+		"apt-get": recorderScript(aptLog),
+		"sudo":    recorderScript(sudoLog) + "exec \"$@\"\n",
+	})
+
+	cfg := writeConfig(t, `
+resources:
+  - name: jq
+    method: "package"
+`)
+
+	code, out := runEnvIn(t, t.TempDir(),
+		[]string{"PATH=" + bin + ":" + os.Getenv("PATH")}, "install", "-f", cfg, "--sudo")
+	if code != 0 {
+		t.Fatalf("--sudo 下退出码 = %d，输出：\n%s", code, out)
+	}
+
+	gotSudo := strings.TrimSpace(readFile(t, sudoLog))
+	if !strings.Contains(gotSudo, "env DEBIAN_FRONTEND=noninteractive apt-get install") {
+		t.Errorf("sudo 收到的参数 = %q，期望 env DEBIAN_FRONTEND=noninteractive apt-get install ...", gotSudo)
+	}
+	if got := strings.TrimSpace(readFile(t, aptLog)); !strings.Contains(got, "jq") {
+		t.Errorf("经 sudo 之后 apt-get 没真的收到包名，apt-get 收到：%q", got)
+	}
+}
+
+// TestSC_M02_PermissionFailureHintsSudo 装包失败且不是 root 时，报错要指出可以加 --sudo。
+//
+// 用户遇到的是包管理器吐出的 Permission denied，光看那句话不会知道 somcli 有开关可加。
+// 提示由生成的 shell 用 id -u 判断后输出 —— 判的是目标节点上执行者的身份，
+// 而不是操作机上的，远程节点上才能成立。
+func TestSC_M02_PermissionFailureHintsSudo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("当前是 root，这条验的是非 root 下的提示")
+	}
+
+	// 假 apt-get 模拟权限不足：写不进系统目录时包管理器就是这样非零退出。
+	bin := fakeBinDir(t, map[string]string{
+		"apt-get": "#!/bin/sh\necho 'Permission denied' >&2\nexit 100\n",
+	})
+
+	cfg := writeConfig(t, `
+resources:
+  - name: jq
+    method: "package"
+`)
+
+	code, out := runEnvIn(t, t.TempDir(),
+		[]string{"PATH=" + bin + ":" + os.Getenv("PATH")}, "install", "-f", cfg)
+	if code == 0 {
+		t.Fatalf("装包失败却退出码 0，输出：\n%s", out)
+	}
+	if !strings.Contains(out, "--sudo") {
+		t.Errorf("权限失败的报错里没有提到 --sudo，用户无从知道有这个开关，输出：\n%s", out)
+	}
+}
+
 // TestSC_M03_MethodContainerPullsAndWraps method: container 拉镜像并留下可直接敲的包装脚本。
 //
 // image 字段过去也是零消费（E1）：配置里写了镜像，somcli 一次都没用过它。

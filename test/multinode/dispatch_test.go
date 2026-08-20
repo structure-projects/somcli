@@ -20,6 +20,7 @@ package multinode
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -147,6 +148,87 @@ resources:
 	if localFileExists(remoteMarker) {
 		t.Errorf("声明为远程的资源落在了操作机上（D1 复现）：%s", remoteMarker)
 	}
+}
+
+// TestSC_D10_SkipTransferWhenRemoteHashMatches 远程已有同 hash 文件就不重复传。
+//
+// 本条原先挂在 remote 组，挪到这里：remote 组的"远端"是回环别名 127.0.0.2，
+// 与操作机是同一个文件系统 —— 源文件和目标文件是同一个文件，hash 永远相等，
+// 用例必绿且什么也没验。只有三节点这样文件系统真正分离，"传过去了"与"没再传"才分得开。
+//
+// 判据取节点上文件的 mtime 不变，而不是日志里有没有"跳过"：日志说跳过、实际又传了一遍，
+// 只看日志的用例照样绿。日志只作为辅证。
+//
+// 两次运行共用同一个 workdir（暂存件路径要相同），第二次带 --force ——
+// 否则资源会在状态记录那一步就被跳过，压根走不到分发。
+func TestSC_D10_SkipTransferWhenRemoteHashMatches(t *testing.T) {
+	target := nodes[0] // node-a
+	dest := markerPath("d10")
+	workdir := t.TempDir()
+
+	const (
+		resName    = "d10-extra"
+		resVersion = "1.0"
+	)
+	cfg := writeConfig(t, nodesYAML()+fmt.Sprintf(`
+resources:
+  - name: %q
+    version: %q
+    hosts:
+      - %q
+    extra_files:
+      %q: "keep-me\n"
+`, resName, resVersion, target.host, dest))
+
+	// 暂存件的绝对路径 —— CopyToRemote 用同一个路径当远端目标，所以节点上就是这个路径。
+	staged := stagedExtraPath(workdir, resName, resVersion, dest)
+
+	if code, out := runIn(t, workdir, "install", "-f", cfg); code != 0 {
+		t.Fatalf("首次分发失败，退出码 = %d，输出：\n%s", code, out)
+	}
+	first := nodeMTime(t, target, staged)
+	if first == "" {
+		t.Fatalf("节点 %s 上没有暂存件 %s —— 首次分发没真的传过去", target.host, staged)
+	}
+	if got := nodeFile(t, target, dest); got != "keep-me" {
+		t.Fatalf("节点 %s 上附加文件内容是 %q，期望 %q", target.host, got, "keep-me")
+	}
+
+	// mtime 是 scp 落地的时间。两次运行挨得太近时，"传了"和"没传"的 mtime 可能落在
+	// 同一个时间戳上，那样断言就变成恒绿 —— 隔开一秒让重传必然体现为 mtime 变化。
+	time.Sleep(1100 * time.Millisecond)
+
+	code, out := runIn(t, workdir, "install", "-f", cfg, "--force")
+	if code != 0 {
+		t.Fatalf("二次分发失败，退出码 = %d，输出：\n%s", code, out)
+	}
+
+	second := nodeMTime(t, target, staged)
+	if second != first {
+		t.Errorf("远端已有同 hash 文件却又传了一遍：mtime 从 %s 变成 %s\n输出：\n%s",
+			first, second, out)
+	}
+	if !strings.Contains(out, "跳过复制") {
+		t.Errorf("日志里没有跳过复制的记录（辅证），输出：\n%s", out)
+	}
+}
+
+// stagedExtraPath 复算 extra_files 暂存件的落点：<workdir>/download/<名>/<版本>/extra/<压平的目标路径>。
+// 这是黑盒能观察到的约定（产物路径），不是内部实现细节。
+func stagedExtraPath(workdir, name, version, dest string) string {
+	flat := strings.NewReplacer("/", "_", ":", "_", `\`, "_").Replace(dest)
+	return filepath.Join(workdir, "download", name, version, "extra", flat)
+}
+
+// nodeMTime 读回节点上文件的修改时间（纳秒精度）；文件不存在时返回 ""。
+func nodeMTime(t *testing.T, n node, path string) string {
+	t.Helper()
+
+	out, err := ssh(n, fmt.Sprintf("stat -c %%y %s 2>/dev/null || true", shellQuote(path)))
+	if err != nil {
+		t.Fatalf("在 %s 上取 %s 的 mtime 失败: %v\n%s", n.host, path, err, out)
+	}
+	return strings.TrimSpace(out)
 }
 
 // markerPath 每次运行都换路径：固定路径会被上一次的残留污染，

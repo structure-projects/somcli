@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // composeAssetServer 冒充 GitHub release：记录被请求的路径，返回一个能报版本的假 compose。
@@ -112,6 +113,78 @@ func TestSC_C02_InstallLandsExecutableOfRequestedVersion(t *testing.T) {
 	if !hit {
 		t.Fatalf("下载的资产不对：期望以 %q 结尾，实际请求了 %v", wantAsset, got)
 	}
+}
+
+// SC-C02：somcli 算出来的下载地址在 GitHub 上真实存在（amd64 与 arm64 各一次）。
+//
+// 上面那几条用假服务器，验的是"URL 里的架构名对不对"，验不了"这个 URL 真的存在" ——
+// 架构名的映射表写错一个字母（aarch64 写成 arm64v8），假服务器照样返回 200。
+// F13 的本质就是"在 arm64 机器上必然 404"，那只有真的去问一次 GitHub 才知道。
+//
+// 地址不是用例自己拼的：先让 somcli 对着假服务器跑一次，把它请求的**整条路径**记下来，
+// 再把主机名换回 github.com。这样架构映射依然完全出自被测程序。
+//
+// 只在 CI 上跑：本机可能没有外网，跳过比让人莫名其妙地红一条更好。CI 的 test 矩阵
+// 同时有 amd64 与 arm64 的机器，两台都绿就等于两种架构都验过了。
+// 只发 HEAD 不下载正文，失败重试一次 —— GitHub 限流不该让整条流水线红。
+func TestSC_C02_ReleaseAssetExistsForThisArch(t *testing.T) {
+	if os.Getenv("CI") == "" {
+		t.Skip("这条要访问 GitHub，只在 CI 上跑；本机由假服务器那几条覆盖")
+	}
+
+	const version = "2.24.0"
+
+	srv, requested := composeAssetServer(t, version, http.StatusOK)
+	installPath := filepath.Join(t.TempDir(), "docker-compose")
+
+	code, out := run(t, "--github-proxy", srv.URL+"/",
+		"docker-compose", "install", version, "--path", installPath)
+	if code != 0 {
+		t.Fatalf("对着假服务器安装失败，退出码 = %d，输出：\n%s", code, out)
+	}
+
+	realURL := ""
+	for _, p := range requested() {
+		// 代理地址的形式是 <proxy>/<原主机>/<原路径>，所以路径首段就是被改写掉的主机名
+		if rest := strings.TrimPrefix(p, "/"); strings.HasPrefix(rest, "github.com/") {
+			realURL = "https://" + rest
+		}
+	}
+	if realURL == "" {
+		t.Fatalf("从请求记录里还原不出真实地址，记录：%v\n输出：\n%s", requested(), out)
+	}
+
+	status, err := headWithRetry(realURL)
+	if err != nil {
+		t.Fatalf("请求 %s 失败（网络问题，不是代码问题）：%v", realURL, err)
+	}
+	if status == http.StatusNotFound {
+		t.Fatalf("somcli 算出的地址在 GitHub 上不存在（404）：%s\n"+
+			"本机架构 %s，这正是 F13 在 arm64 上的表现", realURL, runtime.GOARCH)
+	}
+	if status < 200 || status > 299 {
+		t.Fatalf("请求 %s 得到 %d，既不是 404 也不是成功 —— 当作网络异常看，重跑一次", realURL, status)
+	}
+}
+
+// headWithRetry 发一次 HEAD，失败重试一次。只要状态码，不读正文。
+func headWithRetry(url string) (int, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			time.Sleep(3 * time.Second)
+		}
+		resp, err := client.Head(url)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp.Body.Close()
+		return resp.StatusCode, nil
+	}
+	return 0, lastErr
 }
 
 // SC-C02：下载不到就必须失败，且不留下半个产物。
