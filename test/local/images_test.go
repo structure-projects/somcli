@@ -308,6 +308,69 @@ func TestSC_C05_ImportRejectsNonGzip(t *testing.T) {
 	}
 }
 
+// SC-X10：images -f 认三种清单写法：统一配置的 images: 段、裸 name/tag 列表、
+// 纯文本每行 name:tag。三种都喂给假 docker pull，断言每张都被拉到。
+func TestSC_X10_ImageListThreeFormats(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name: "SC-X10/统一配置取 images 段",
+			content: `
+resources:
+  - name: tool
+    version: "1.0"
+images:
+  - name: library/nginx
+    tag: "1.25"
+  - name: library/redis
+    tag: "7"
+`,
+			want: []string{"library/nginx:1.25", "library/redis:7"},
+		},
+		{
+			name: "SC-X10/裸 name/tag 列表",
+			content: `- name: library/nginx
+  tag: "1.25"
+- name: library/redis
+  tag: "7"
+`,
+			want: []string{"library/nginx:1.25", "library/redis:7"},
+		},
+		{
+			name:    "SC-X10/纯文本每行 name:tag",
+			content: "library/nginx:1.25\n# 注释行应跳过\nlibrary/redis:7\n",
+			want:    []string{"library/nginx:1.25", "library/redis:7"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			log := filepath.Join(t.TempDir(), "docker.log")
+			bin := fakeDockerLifecycleDir(t, log, "no-such-mark")
+			list := filepath.Join(t.TempDir(), "images.txt")
+			if err := os.WriteFile(list, []byte(tc.content), 0o644); err != nil {
+				t.Fatalf("写清单失败: %v", err)
+			}
+
+			code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + bin},
+				"images", "pull", "-f", list)
+			if code != 0 {
+				t.Fatalf("解析清单失败，退出码 %d，输出：\n%s", code, out)
+			}
+			got := readFile(t, log)
+			for _, img := range tc.want {
+				if !strings.Contains(got, "pull "+img) {
+					t.Errorf("清单里的 %s 没有被拉取，docker 调用记录：\n%s", img, got)
+				}
+			}
+		})
+	}
+}
+
 // writeTarGz 造一个只含单个条目的 .tar.gz，条目名由调用方指定（含非法名字）。
 func writeTarGz(t *testing.T, path, name, content string) {
 	t.Helper()

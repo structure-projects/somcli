@@ -786,9 +786,9 @@ scenarios:
     status: done
 
   - id: SC-X10
-    desc: images --custom-file 认统一配置的 images 段 / 裸列表 / 纯文本 name:tag 三种写法
-    env: [cluster]
-    files: []
+    desc: images -f 认统一配置的 images 段 / 裸列表 / 纯文本 name:tag 三种写法
+    env: [local]
+    files: [test/local/images_test.go]
     defects: [G9]
     phase: 4
-    status: pending
+    status: done
