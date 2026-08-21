@@ -3,8 +3,9 @@
 # 这条流水线回答的是别处回答不了的问题：集群装成功了没有。test/local 只能验
 # "装不成的配置被拦住"，test/multinode 的节点没有 systemd、跑不了 kubelet 与 dockerd。
 #
-# 不挂在 push 上的原因是耗时：k8s 那个 job 一次要装七遍集群（flannel / calico /
-# 双节点 / 单节点 / preflight / apply / 多 master），一小时量级往上。
+# 不挂在 push 上的原因是耗时：k8s 那个 job 一次要装十遍集群（flannel / calico /
+# 双节点 / 单节点 / preflight / apply / 多 master / 1.28 / 1.29 / 1.30），
+# 一小时量级往上。其中版本矩阵的三套 kube 二进制要各下一遍，是这条里额外耗时的大头。
 # 每晚一次 + 手动触发；转绿并稳定之后再考虑挑一条并入 PR 门禁（见总纲待决事项 4）。
 name: E2E 集群
 
@@ -21,8 +22,9 @@ jobs:
   cluster:
     name: 真实安装 k8s（单节点 / 双节点 / CNI / preflight）
     runs-on: ubuntu-latest
-    # 一晚上要装五遍集群（flannel、calico、双节点、单节点、preflight）。
-    # 二进制只下一次（用例共用一个 workdir），耗时主要是 kubeadm init 与镜像拉取。
+    # 一晚上要装八遍集群（flannel、calico、双节点、单节点、preflight、多 master，
+    # 再加版本矩阵的 1.28 / 1.29 / 1.30 各一遍）。同一个版本的二进制只下一次
+    # （用例共用一个 workdir，换版本会按状态重新装），耗时主要是 kubeadm init 与镜像拉取。
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4

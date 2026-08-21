@@ -432,9 +432,9 @@ scenarios:
     status: pending
 
   - id: SC-K08
-    desc: 版本矩阵 1.28 / 1.29 / 1.30
-    env: [cluster]
-    files: [test/cluster/version_matrix_test.go]
+    desc: 版本矩阵 1.28 / 1.29 / 1.30（含版本号形状校验）
+    env: [local, cluster]
+    files: [test/local/cluster_version_test.go, test/cluster/version_matrix_test.go]
     defects: [D6]
     phase: 2
     status: pending

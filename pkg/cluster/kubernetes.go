@@ -18,6 +18,7 @@ package cluster
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -546,6 +547,12 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 			config.Cluster.K8sConfig.Cni, cniFlannel, cniCalico)
 	}
 
+	// 版本要在连节点之前查形状：configs/k8s 里每条 URL 都是 .../v{{.Version}}/...，
+	// 写错的代价是下载 404，而那时节点已经被改过一遍了。
+	if err := validateK8sVersions(config); err != nil {
+		return err
+	}
+
 	// 引用的资源名必须在清单里找得到，而且这件事要在连节点之前问清楚：
 	// 名字写错时若等到装的时候才报，前面几样已经装到节点上了，而报错只说"没有资源 xxx"，
 	// 看不出是自己拼错了一个名字。
@@ -556,14 +563,9 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 	// dockershim 在 k8s 1.24 从 kubelet 移除，而这里走的是 --cri-socket dockershim.sock
 	// （见 initK8sMaster）—— 1.24 以上必然连不上 CRI。不拒绝的话，失败会发生在装完 docker、
 	// 装完 kubeadm、跑到 kubeadm init 的时候：节点已经被改过一遍了。
+	// version 的形状由上面的 validateK8sVersions 保证，这里必定解析得出。
 	if strings.ToLower(strings.TrimSpace(config.Cluster.K8sConfig.ContainerRuntime)) == "docker" {
-		major, minor, ok := parseK8sMinor(config.Cluster.K8sConfig.Version)
-		if !ok {
-			return fmt.Errorf("containerRuntime: docker 时必须写明 version（形如 1.23.17），"+
-				"当前为 %q：dockershim 在 1.24 已被移除，"+
-				"不知道版本就无法判断这套配置能不能装成",
-				config.Cluster.K8sConfig.Version)
-		}
+		major, minor, _ := parseK8sMinor(config.Cluster.K8sConfig.Version)
 		if major > 1 || (major == 1 && minor >= 24) {
 			return fmt.Errorf("k8s %s 不能配 containerRuntime: docker：\n"+
 				"dockershim 在 1.24 已从 kubelet 移除，somcli 用的 "+
@@ -576,6 +578,58 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 
 	return nil
 }
+
+// validateK8sVersions 查所有版本号的形状，在连节点之前。
+//
+// 两种写法过不了：
+//
+// 空的 k8s version —— 会拼出 `kubeadm init --kubernetes-version=`，kubeadm 报的是
+// "could not parse version"；更麻烦的是这之前装的 kubeadm 二进制来自清单里的兜底版本，
+// 于是"配置里没写版本"表现成"装了个没人要求的版本，然后 init 失败"。
+//
+// 带 v 前缀 —— configs/k8s 里每条 URL 都写着 .../v{{.Version}}/...，写 v1.30.0
+// 会拼出 vv1.30.0，下载 404。这不是一个能靠猜修好的错（悄悄剥掉 v 就等于替用户改配置），
+// 直接指出来更省事。
+//
+// 其余版本键（containerd / runc / cni-plugins / docker / cni）留空由 applyK8sDefaults
+// 填默认值，所以这里只查非空值的 v 前缀。
+func validateK8sVersions(config *types.ClusterConfig) error {
+	k8s := config.Cluster.K8sConfig
+
+	version := strings.TrimSpace(k8s.Version)
+	if version == "" {
+		return fmt.Errorf("k8sConfig.version 不能为空：请写明要装的 Kubernetes 版本（形如 1.30.0）。\n" +
+			"不写的话 kubeadm init 拿不到版本号，而 kubeadm/kubelet/kubectl 已经按清单里的" +
+			"兜底版本装上去了 —— 装出来的与你想要的未必是同一个版本")
+	}
+	if !k8sVersionPattern.MatchString(version) {
+		return fmt.Errorf("k8sConfig.version 格式不对: %q，要写成完整的三段版本号（形如 1.30.0）。\n"+
+			"二进制取自 https://dl.k8s.io/v<版本>/bin/...，那里只有具体的发布版本，"+
+			"没有 1.30 这样的版本线；开头也不要写 v，URL 里已经有了", k8s.Version)
+	}
+
+	for _, f := range []struct {
+		key   string
+		value string
+	}{
+		{"containerdVersion", k8s.ContainerdVersion},
+		{"runcVersion", k8s.RuncVersion},
+		{"cniPluginsVersion", k8s.CniPluginsVersion},
+		{"dockerVersion", k8s.DockerVersion},
+		{"cniVersion", k8s.CniVersion},
+	} {
+		if v := strings.TrimSpace(f.value); strings.HasPrefix(v, "v") || strings.HasPrefix(v, "V") {
+			return fmt.Errorf("k8sConfig.%s 不要带 v 前缀: %q，写成 %q。\n"+
+				"清单里的下载地址是 .../v{版本}/...，带 v 会拼成 vv%s 而下载不到",
+				f.key, f.value, strings.TrimLeft(v, "vV"), strings.TrimLeft(v, "vV"))
+		}
+	}
+
+	return nil
+}
+
+// k8sVersionPattern 是 dl.k8s.io 上的发布版本形状：三段数字，允许 -rc.1 之类的预发布后缀。
+var k8sVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
 
 // parseK8sMinor 取版本号的主次版本：1.28.2 → (1, 28)。
 // 容忍 v 前缀与次版本上的后缀（1.24-rc.0），取不出数字就 ok=false —— 宁可说"看不懂"，

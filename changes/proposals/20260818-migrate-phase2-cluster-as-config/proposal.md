@@ -448,6 +448,26 @@ NotReady，而原因出在另一组用例里。两组各占一台 runner，网�
 载体是 `e2e.yml` 新增的 `swarm` job（每晚 + 手动，与 k8s 那个 job 并行）。
 SC-S01..S06 在 matrix 里保持 `pending`，等这条 job 真的转绿再勾。
 
+### 偏差 24：版本号没校验形状，写错了要到下载或 init 才失败（SC-K08）
+
+做 SC-K08 时发现 `validateK8sClusterConfig` 对版本号只字未查：
+
+- `k8sConfig.version` 留空能一路通过校验。`kubeadm init --kubernetes-version=`
+  会报 "could not parse version"，而更隐蔽的是：在那之前 kubeadm/kubelet/kubectl
+  已经按 `configs/k8s/kubernetes.yaml` 里的兜底版本（1.28.2）装到了节点上 ——
+  "配置里漏了一个键"表现成"装了个没人要求的版本然后 init 失败"，两处都指不到根因；
+- 写 `v1.30.0` 或 `1.30` 也能过。下载地址是 `dl.k8s.io/v{{.Version}}/...`：
+  前者拼成 `vv1.30.0`，后者拼 `v1.30`（那上面只有具体发布版本，没有版本线），
+  都是 404，而报错只说"下载失败"。组件版本（containerdVersion 等）同理，带 v 前缀
+  会拼出双 v。
+
+所以加了 `validateK8sVersions`，在连节点之前拒绝：空 version、不是三段数字的
+version、以及任何带 v 前缀的版本键。拒绝类断言在 local 组
+（`test/local/cluster_version_test.go`，本机可证伪，已确认关掉校验就全红）；
+真的把 1.28 / 1.29 / 1.30 各装一遍、并断言 kubeadm/kubelet/apiserver 三处版本
+都与配置一致，在 cluster 组（`test/cluster/version_matrix_test.go`），
+随每晚 e2e 跑，转绿前 matrix 里保持 pending。
+
 ### 待办：`cluster create --force` 是个死标志
 
 `cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s
