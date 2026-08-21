@@ -593,7 +593,7 @@ scenarios:
     files: [test/local/registry_test.go]
     defects: []
     phase: 3
-    status: pending
+    status: done
 
   - id: SC-C04
     desc: registry 镜像同步
@@ -601,7 +601,7 @@ scenarios:
     files: [test/local/registry_test.go]
     defects: [E6]
     phase: 3
-    status: pending
+    status: done
 
   - id: SC-C05
     desc: images pull / save / load / list 全生命周期
@@ -609,7 +609,7 @@ scenarios:
     files: [test/local/images_test.go]
     defects: [F14]
     phase: 3
-    status: pending
+    status: done
 
   - id: SC-C06
     desc: apply 应用配置

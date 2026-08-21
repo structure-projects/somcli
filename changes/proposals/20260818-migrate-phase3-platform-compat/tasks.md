@@ -46,9 +46,14 @@
 
 ## M3.5 周边子系统覆盖
 
-- [ ] `test/local/registry_test.go`：harbor 安装（SC-C03）、镜像同步（SC-C04）
-- [ ] `sync` 的两个既有问题复核：单张失败是否中断、`cleanup` 是否会 `docker rmi` 已成功推送的镜像
-- [ ] `test/local/images_test.go`：pull / save / load / list 全生命周期（SC-C05）
+- [x] `test/local/registry_test.go`：harbor 安装（SC-C03）、镜像同步（SC-C04）
+  - harbor install：hostname/version 校验、docker/docker-compose 前置依赖检查
+  - sync：入参校验、pull→tag→push→rmi 编排、E6（uninstall 不再蹭 install 校验）回归
+- [x] `sync` 的两个既有问题复核：
+  - 单张失败不中断：SyncAll 各镜像独立 goroutine，错误聚合后整体非 0 退出（已加测试锁定）
+  - cleanup：`docker rmi` 只删**本地**标签，目标 registry 中已推送镜像不受影响；且仅在 push 成功后执行（已加测试锁定）
+- [x] `test/local/images_test.go`：pull / save / load / list 全生命周期（SC-C05）
+  - export(save) 产合法 gzip、失败删半截归档；import(load) 逐条 docker load；坏归档拒绝
 
 ## 测试
 

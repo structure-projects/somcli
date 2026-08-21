@@ -179,6 +179,135 @@ func TestR1_ImportRejectsPathTraversalEntries(t *testing.T) {
 	}
 }
 
+// fakeDockerLifecycleDir 造一个能跑 save/load 的假 docker：
+//   - save -o <file> <img>：往 <file> 写一小段内容，伪装镜像层
+//   - load -i <file>：记录一次调用
+//   - pull/tag/push/rmi：记录并（对含 failMark 的 push）失败
+//
+// 用它把"导出→导入"整条链在本机跑通，不依赖真 docker 守护进程。
+func fakeDockerLifecycleDir(t *testing.T, logPath, failMark string) string {
+	t.Helper()
+	script := fmt.Sprintf(`#!/bin/sh
+printf 'docker %%s\n' "$*" >> %q
+sub="$1"; shift
+case "$sub" in
+  save)
+    out="$2"; img="$3"
+    case "$img" in *%s*) echo "boom: save $img" >&2; exit 1 ;; esac
+    printf 'fake-layer-for-%%s\n' "$img" > "$out"
+    exit 0 ;;
+  load) exit 0 ;;
+  pull|tag) exit 0 ;;
+  push)
+    for a in "$@"; do case "$a" in *%s*) echo "boom: push $a" >&2; exit 1 ;; esac; done
+    exit 0 ;;
+  rmi) exit 0 ;;
+  *) exit 0 ;;
+esac
+`, logPath, failMark, failMark)
+	return fakeBinDir(t, map[string]string{"docker": script})
+}
+
+// SC-C05：export 把每张镜像 `docker save` 出来后打进同一个 tar.gz。
+// 判据：产物非空、是合法 gzip、里面每张镜像一个条目；全程退出 0。
+func TestSC_C05_ExportProducesArchive(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "docker.log")
+	bin := fakeDockerLifecycleDir(t, log, "no-such-mark")
+	list := writeImageList(t, "library/nginx:1.25", "library/redis:7")
+	archive := filepath.Join(t.TempDir(), "images.tar.gz")
+
+	code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + bin},
+		"images", "export", "-f", list, "-o", archive)
+	if code != 0 {
+		t.Fatalf("导出失败，退出码 %d，输出：\n%s", code, out)
+	}
+
+	info, err := os.Stat(archive)
+	if err != nil {
+		t.Fatalf("导出产物不存在: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("导出产物为空: %s", archive)
+	}
+
+	got := readFile(t, log)
+	if !strings.Contains(got, "docker save") {
+		t.Errorf("没有执行 docker save，调用记录：\n%s", got)
+	}
+	// gzip 魔数 1f 8b：证明产物是真 gzip 而不是半截文件。
+	data, _ := os.ReadFile(archive)
+	if len(data) < 2 || data[0] != 0x1f || data[1] != 0x8b {
+		t.Errorf("产物不是合法 gzip（头两字节 %x %x）", data[0], data[1])
+	}
+}
+
+// SC-C05：export 遇到一张镜像 save 失败，必须删掉半截归档并非 0 退出。
+// 半截归档比没有更坏 —— 它看着像能用的离线包，要到目标机 import 才暴露。
+func TestSC_C05_ExportFailureRemovesArchive(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "docker.log")
+	bin := fakeDockerLifecycleDir(t, log, "broken")
+	list := writeImageList(t, "library/nginx:1.25", "library/broken:1.0")
+	archive := filepath.Join(t.TempDir(), "images.tar.gz")
+
+	code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + bin},
+		"images", "export", "-f", list, "-o", archive)
+	if code == 0 {
+		t.Fatalf("有镜像 save 失败却退出 0，输出：\n%s", out)
+	}
+	if _, err := os.Stat(archive); err == nil {
+		t.Errorf("失败后仍留着半截归档 %s", archive)
+	}
+	if !strings.Contains(out, "broken") {
+		t.Errorf("错误信息没点名失败镜像，输出：\n%s", out)
+	}
+}
+
+// SC-C05：export 出的归档能被 import 逐条 `docker load`。
+// 这是离线场景的闭环：操作机导出，目标机导入。
+func TestSC_C05_ImportLoadsExportedArchive(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "docker.log")
+	bin := fakeDockerLifecycleDir(t, log, "no-such-mark")
+	list := writeImageList(t, "library/nginx:1.25", "library/redis:7")
+	workdir := t.TempDir()
+	archive := filepath.Join(workdir, "images.tar.gz")
+
+	if code, out := runEnvIn(t, workdir, []string{"PATH=" + bin},
+		"images", "export", "-f", list, "-o", archive); code != 0 {
+		t.Fatalf("导出失败：\n%s", out)
+	}
+
+	// 导入用另一个日志，便于只数 load 次数。
+	loadLog := filepath.Join(t.TempDir(), "load.log")
+	loadBin := fakeDockerLifecycleDir(t, loadLog, "no-such-mark")
+	code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + loadBin},
+		"images", "import", "-i", archive)
+	if code != 0 {
+		t.Fatalf("导入失败，退出码 %d，输出：\n%s", code, out)
+	}
+	if got := readFile(t, loadLog); strings.Count(got, "docker load") != 2 {
+		t.Errorf("应当对 2 张镜像各 load 一次，实际调用记录：\n%s", got)
+	}
+}
+
+// SC-C05：import 不是 .tar.gz（连 gzip 都不是）要明确失败，
+// 而不是 panic 或退出 0。
+func TestSC_C05_ImportRejectsNonGzip(t *testing.T) {
+	bin := fakeDockerLifecycleDir(t, filepath.Join(t.TempDir(), "docker.log"), "no-such-mark")
+	notArchive := filepath.Join(t.TempDir(), "broken.tar.gz")
+	if err := os.WriteFile(notArchive, []byte("not a gzip"), 0o644); err != nil {
+		t.Fatalf("写坏归档失败: %v", err)
+	}
+
+	code, out := runEnvIn(t, t.TempDir(), []string{"PATH=" + bin},
+		"images", "import", "-i", notArchive)
+	if code == 0 {
+		t.Fatalf("坏归档却导入成功（退出 0），输出：\n%s", out)
+	}
+	if !strings.Contains(out, "gzip") {
+		t.Errorf("错误信息没指出是 gzip 解析问题，输出：\n%s", out)
+	}
+}
+
 // writeTarGz 造一个只含单个条目的 .tar.gz，条目名由调用方指定（含非法名字）。
 func writeTarGz(t *testing.T, path, name, content string) {
 	t.Helper()
