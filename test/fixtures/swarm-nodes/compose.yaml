@@ -1,0 +1,82 @@
+# 三个 systemd 节点（2 manager + 1 worker），供 test/swarm 使用。
+#
+# 镜像直接复用 k8s-nodes 那份（systemd 是 PID 1、privileged、cgroup 用宿主命名空间）：
+# swarm 节点需要的前提与 k8s 节点完全一样 —— 装 docker 要 systemctl，
+# 跑 dockerd 要特权。两份 Dockerfile 必然漂移，所以只有一份。
+#
+# 为什么不与 test/cluster 共用容器：装 docker 会带上它自己那份 containerd 并覆盖
+# /etc/containerd/config.toml，而 k8s 用例再装 containerd 时状态库会说"装过了"
+# 直接跳过 —— SystemdCgroup = true 那条改动就丢了，表现是节点永久 NotReady，
+# 而原因在另一组用例里。两组分开，各自的失败只说明自己的事。
+#
+# 起停由 test/swarm 的 TestMain 负责。
+services:
+  swarm-m1:
+    build: ../k8s-nodes
+    container_name: somcli-swarm-m1
+    hostname: swarm-m1
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # /var/lib/docker 必须落在真正的卷上：容器的根文件系统是 overlayfs，
+      # dockerd 拒绝在 overlayfs 上再叠一层 overlay2，会退到 vfs（每层完整拷贝，
+      # 慢到拉个镜像就超时）。
+      - swarm-m1-docker:/var/lib/docker
+    networks:
+      somcli-swarm:
+        ipv4_address: 172.30.0.11
+
+  swarm-m2:
+    build: ../k8s-nodes
+    container_name: somcli-swarm-m2
+    hostname: swarm-m2
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - swarm-m2-docker:/var/lib/docker
+    networks:
+      somcli-swarm:
+        ipv4_address: 172.30.0.12
+
+  swarm-w1:
+    build: ../k8s-nodes
+    container_name: somcli-swarm-w1
+    hostname: swarm-w1
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - swarm-w1-docker:/var/lib/docker
+    networks:
+      somcli-swarm:
+        ipv4_address: 172.30.0.13
+
+volumes:
+  swarm-m1-docker:
+  swarm-m2-docker:
+  swarm-w1-docker:
+
+networks:
+  somcli-swarm:
+    driver: bridge
+    ipam:
+      config:
+        # 与 multinode 的 172.28、k8s-nodes 的 172.29 错开，三套 fixture 可以同时起着。
+        - subnet: 172.30.0.0/16

@@ -14,7 +14,9 @@
 #             local     只需 Go + 本机 shell，默认 go test ./... 就跑
 #             remote    需要 SSH 可达的单个节点（CI runner 对自身 SSH）
 #             multinode 需要 3 个 sshd 容器
-#             cluster   需要可安装 k8s / swarm 的特权环境
+#             cluster   需要可安装 k8s 的特权 systemd 容器
+#             swarm     需要可安装 docker 的特权 systemd 容器（与 cluster 分开：
+#                       装 docker 会覆盖 k8s 用例装出来的 containerd 配置）
 #             matrix    由流水线的平台矩阵承载，无 Go 用例
 #   files   承载该场景的用例文件（相对仓库根）
 #   defects 该场景负责回归的缺陷编号，见提案 §4
@@ -512,50 +514,53 @@ scenarios:
     status: done
 
   # ---------- SC-S Swarm ----------
+  # env 从 multinode 改到 swarm：multinode 的容器是直接 exec sshd 起来的，没有 PID 1
+  # 的 systemd，而装 docker 的必经步骤里有 systemctl enable/start —— 那组容器里
+  # 装不上 docker，后面什么都断言不到。载体是 e2e.yml 的 swarm job。
   - id: SC-S01
     desc: 初始化 manager
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-S02
     desc: worker 加入
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-S03
     desc: 第二个 manager 加入
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-S04
     desc: 集群移除
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-S05
     desc: 扩容——新增节点（cluster add-node，swarm）
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-S06
     desc: 缩容——drain + leave + node rm（cluster remove-node，swarm）
-    env: [multinode]
-    files: [test/multinode/swarm_test.go]
+    env: [swarm]
+    files: [test/swarm/swarm_test.go]
     defects: []
     phase: 2
     status: pending

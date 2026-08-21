@@ -419,7 +419,34 @@ somcli cluster remove-node -f cluster.yaml --node k8s-worker2 --force
   join；摘：`docker node update --availability drain` 腾空 → `docker swarm leave`
   （manager 要带 `--force`，swarm 默认不让走，怕拆了 raft 法定人数）→
   manager 上 `docker node rm --force` 删记录（离开之后记录还在，状态是 Down）。
-  覆盖记为 SC-S05 / SC-S06，与 SC-S01..S04 一起在 multinode 组兑现。
+  覆盖记为 SC-S05 / SC-S06，与 SC-S01..S04 一起兑现（载体见偏差 23）。
+
+### 偏差 23：Swarm 场景要新开一个测试组，不能挂在 multinode 上
+
+方案把 SC-S01..S04 放在 multinode 组。做的时候发现那组根本跑不了：multinode 的容器是
+`exec /usr/sbin/sshd -D -e` 起来的，PID 1 不是 systemd，而装 docker 的必经步骤里有
+`systemctl enable/start docker` —— 那组容器里装不上 docker，后面什么都断言不到。
+
+所以新增第五个测试组 `swarm`（`test/swarm/`，build tag / 目录名 / matrix 的 `env`
+三者同名，与前四组一个规矩），fixture 在 `test/fixtures/swarm-nodes/`：
+三台特权 systemd 容器 `swarm-m1` / `swarm-m2` / `swarm-w1`（172.30.0.11-13），
+镜像复用 `k8s-nodes` 的 Dockerfile（要的东西一样：systemd + sshd + 常用工具）。
+
+**容器不与 test/cluster 共用**，理由是一个具体的串台：装 docker 会带上它自己那份
+containerd 并覆盖 `/etc/containerd/config.toml`，而 k8s 用例再装 containerd 时状态库
+会说"装过了"直接跳过 —— `SystemdCgroup = true` 那条改动就丢了，表现是节点永久
+NotReady，而原因出在另一组用例里。两组各占一台 runner，网段与容器名都不重叠。
+
+容器里跑 dockerd 另有两处前置：
+
+- `/var/lib/docker` 必须是命名卷。overlayfs 上面再叠 overlay2 是不允许的，
+  dockerd 会退到 vfs，慢到用例超时；
+- 宿主上 `modprobe vxlan`。overlay 网络走 vxlan 封装，容器共享宿主内核，
+  模块没加载的话节点里的 dockerd 建不出 ingress 网络 —— 与 `br_netfilter`
+  同一类，属于「E2E 前置：宿主上做的三件事」的同类项，不算 somcli 的验收。
+
+载体是 `e2e.yml` 新增的 `swarm` job（每晚 + 手动，与 k8s 那个 job 并行）。
+SC-S01..S06 在 matrix 里保持 `pending`，等这条 job 真的转绿再勾。
 
 ### 待办：`cluster create --force` 是个死标志
 

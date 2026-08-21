@@ -1,11 +1,11 @@
-# 真正把 k8s 装一遍。
+# 真正把 k8s 与 swarm 装一遍。
 #
 # 这条流水线回答的是别处回答不了的问题：集群装成功了没有。test/local 只能验
-# "装不成的配置被拦住"，test/multinode 的节点没有 systemd、跑不了 kubelet。
+# "装不成的配置被拦住"，test/multinode 的节点没有 systemd、跑不了 kubelet 与 dockerd。
 #
-# 不挂在 push 上的原因是耗时：一次要装七遍集群（flannel / calico / 双节点 / 单节点 /
-# preflight / apply / 多 master），一小时量级往上。每晚一次 + 手动触发；
-# 转绿并稳定之后再考虑挑一条并入 PR 门禁（见总纲待决事项 4）。
+# 不挂在 push 上的原因是耗时：k8s 那个 job 一次要装七遍集群（flannel / calico /
+# 双节点 / 单节点 / preflight / apply / 多 master），一小时量级往上。
+# 每晚一次 + 手动触发；转绿并稳定之后再考虑挑一条并入 PR 门禁（见总纲待决事项 4）。
 name: E2E 集群
 
 on:
@@ -66,3 +66,43 @@ jobs:
       - name: 清理容器
         if: always()
         run: docker compose -f test/fixtures/k8s-nodes/compose.yaml down -v --remove-orphans || true
+
+  swarm:
+    name: 真实安装 Docker Swarm（生命周期 / 扩缩容）
+    runs-on: ubuntu-latest
+    # 与 k8s 那个 job 并行：两套 fixture 的网段与容器名都不重叠，
+    # 但它们在同一台 runner 上会抢 CPU 与磁盘，所以分成两个 job 各占一台。
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: 自检 docker 可用
+        run: docker info --format '{{.ServerVersion}}' && docker compose version
+
+      # 节点是容器，用的是宿主的内核。overlay 网络走 vxlan 封装，模块没加载的话
+      # 节点里的 dockerd 建不出 ingress 网络 —— 这件事只能在宿主上做。
+      - name: 准备宿主内核前置
+        run: |
+          set -eux
+          sudo modprobe vxlan
+          sudo modprobe overlay
+          lsmod | grep -E 'vxlan|overlay'
+
+      - name: 测试
+        env:
+          SOMCLI_SWARM_KEEP: '1'
+        run: go test -tags=swarm ./test/swarm/... -count=1 -v -timeout 55m
+
+      - name: 失败时收集节点日志
+        if: failure()
+        run: |
+          docker compose -f test/fixtures/swarm-nodes/compose.yaml logs --no-color || true
+          docker compose -f test/fixtures/swarm-nodes/compose.yaml ps || true
+
+      - name: 清理容器
+        if: always()
+        run: docker compose -f test/fixtures/swarm-nodes/compose.yaml down -v --remove-orphans || true
