@@ -74,8 +74,11 @@
       —— 顺带修了原实现四处：`kubeadm reset` 少 `--cri-socket`、重置顺序反了、
       CNI 网桥没删；iptables 故意不动（见 proposal「偏差 21」）。
       判据是"再装一遍能成"，不是"目录没了"
-- [ ] 扩容新增 worker（SC-K12）、缩容 drain + delete + reset（SC-K13）
-- [ ] Swarm 全生命周期多节点覆盖（SC-S01..S04）
+- [x] 扩容新增 worker（SC-K12）、缩容 drain + delete + reset（SC-K13）
+      —— 需要新命令 `cluster add-node` / `cluster remove-node`（重跑 create 会再 init 一遍
+      必然失败），k8s 与 swarm 都实现，见 proposal「偏差 22」；
+      拒绝类断言落在 local 组，真加减落在 cluster 组
+- [ ] Swarm 全生命周期多节点覆盖（SC-S01..S04，另加扩缩容 SC-S05/S06）
 - [ ] F11：清理 `generateKubeadmConfig`、`SSHExec`、`SSHExecWithOutput`、`SSHClient`、`RsyncCopy`、`GetDownloadURL`、`NormalizeVersion` 等死代码（删除前 grep 确认零引用，独立提交）
 
 ## 测试

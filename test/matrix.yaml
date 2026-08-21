@@ -464,17 +464,17 @@ scenarios:
     status: pending
 
   - id: SC-K12
-    desc: 扩容——新增 worker 节点
-    env: [cluster]
-    files: [test/cluster/scale_test.go]
+    desc: 扩容——新增 worker 节点（cluster add-node）
+    env: [local, cluster]
+    files: [test/local/cluster_scale_test.go, test/cluster/scale_test.go]
     defects: []
     phase: 2
     status: pending
 
   - id: SC-K13
-    desc: 缩容——drain + delete + reset
-    env: [cluster]
-    files: [test/cluster/scale_test.go]
+    desc: 缩容——drain + delete + reset（cluster remove-node）
+    env: [local, cluster]
+    files: [test/local/cluster_scale_test.go, test/cluster/scale_test.go]
     defects: []
     phase: 2
     status: pending
@@ -538,6 +538,22 @@ scenarios:
 
   - id: SC-S04
     desc: 集群移除
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-S05
+    desc: 扩容——新增节点（cluster add-node，swarm）
+    env: [multinode]
+    files: [test/multinode/swarm_test.go]
+    defects: []
+    phase: 2
+    status: pending
+
+  - id: SC-S06
+    desc: 缩容——drain + leave + node rm（cluster remove-node，swarm）
     env: [multinode]
     files: [test/multinode/swarm_test.go]
     defects: []

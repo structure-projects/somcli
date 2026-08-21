@@ -41,7 +41,7 @@ func CreateSwarmCluster(config *types.ClusterConfig, force bool, skipPrecheck bo
 	}
 
 	// 3. 准备工作（包含防火墙和hosts配置）
-	if err := prepareSwarmCluster(config, skipPrecheck); err != nil {
+	if err := prepareSwarmCluster(config, config.Cluster.Nodes, skipPrecheck); err != nil {
 		return err
 	}
 
@@ -74,20 +74,22 @@ func CreateSwarmCluster(config *types.ClusterConfig, force bool, skipPrecheck bo
 
 // ===================== 集群准备函数 =====================
 
-func prepareSwarmCluster(config *types.ClusterConfig, skipPrecheck bool) error {
+// prepareSwarmCluster 准备指定的这几台节点。扩容时只传新来的那一台。
+func prepareSwarmCluster(config *types.ClusterConfig, nodes []types.RemoteNode, skipPrecheck bool) error {
 	if skipPrecheck {
 		return nil
 	}
 
 	installer := docker.NewInstaller(true, true)
 
-	// 生成所有节点的hosts记录
+	// hosts 记录取的是配置里的全部节点，不是这次要动的那几台：
+	// 新加的一台也得认得原有的主机名。
 	var hostsEntries strings.Builder
 	for _, node := range config.Cluster.Nodes {
 		hostsEntries.WriteString(fmt.Sprintf("%s\t%s\n", node.IP, node.Host))
 	}
 
-	for _, node := range config.Cluster.Nodes {
+	for _, node := range nodes {
 
 		// 1. 配置防火墙
 		if err := configureFirewall(&node); err != nil {

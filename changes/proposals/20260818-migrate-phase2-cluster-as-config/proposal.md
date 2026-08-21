@@ -386,6 +386,41 @@ haproxy（四层转发，apiserver 是 TLS 终结方，中间这一跳不能拆�
 目录 / kubelet / 网桥的检查保留，但只作为失败时的定位信息。
 重装前不做 `resetCluster` —— 替它清场就什么也没验了。
 
+### 偏差 22：扩缩容需要新命令 `cluster add-node` / `cluster remove-node`
+
+方案把 SC-K12（扩容）/ SC-K13（缩容）列进本阶段验收，但 somcli 只有
+`cluster create` 与 `cluster remove` —— 没有任何"往已有集群里加一台"的入口。
+重跑 `cluster create` 不行：它会在第一台 master 上再跑一遍 `kubeadm init`，
+撞上"配置文件已存在 / 端口已占用"直接失败。
+
+所以新增两个子命令（属于新增产品面，超出方案原文，记在此处）：
+
+```
+somcli cluster add-node    -f cluster.yaml --node k8s-worker2
+somcli cluster remove-node -f cluster.yaml --node k8s-worker2 --force
+```
+
+几个定形上的选择：
+
+- **节点要先写进配置文件**，命令只用 `--node` 指名。不给 `--ip/--user/--password`
+  那套平行入口：凭据、角色、运行时都在配置里，两处描述同一台机器早晚会不一致。
+  名字不在配置里时在连节点之前拒绝，并列出可用的主机名（同 SC-K16 的做法）；
+- **add-node 不重装网络插件**：安装清单里本来就不含 CNI（见 `defaultK8sResources`
+  的注释），新节点上的 CNI 由已在集群里的 DaemonSet 铺；
+- **已经在集群里的节点拒绝加**：否则 `kubeadm join` 报的是"配置文件已存在"，
+  指向的是文件而不是"这台早就加进来了"；
+- **remove-node 拒绝摘第一台 master / manager**：那等于拆掉整个集群，该用 `cluster remove`。
+  k8s 侧顺序是 drain（带 `--ignore-daemonsets --delete-emptydir-data`）→ 在该节点上跑
+  与 `cluster remove` 同一套重置（复用 `resetK8sNode`，因此偏差 21 里那几处修复对缩容
+  一样生效）→ `kubectl delete node`；
+- **swarm 一样支持**，不是只做 k8s：配置里就有那台机器的 ssh 凭据，
+  加减节点该做的事都能在节点上跑。加：`docker swarm join-token <role>` 现场取令牌
+  （不读 `cluster create` 落下的那个文件 —— 令牌可以被 `--rotate` 换掉）→ 在新节点上
+  join；摘：`docker node update --availability drain` 腾空 → `docker swarm leave`
+  （manager 要带 `--force`，swarm 默认不让走，怕拆了 raft 法定人数）→
+  manager 上 `docker node rm --force` 删记录（离开之后记录还在，状态是 Down）。
+  覆盖记为 SC-S05 / SC-S06，与 SC-S01..S04 一起在 multinode 组兑现。
+
 ### 待办：`cluster create --force` 是个死标志
 
 `cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s

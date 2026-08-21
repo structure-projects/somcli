@@ -119,7 +119,7 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	utils.PrintSuccess("✓ 集群准备完成")
 
 	// 2. 依赖安装阶段
-	if err := installDependencies(config, force); err != nil {
+	if err := installDependencies(config, getAllNodesIP(config), force); err != nil {
 		utils.PrintError("依赖安装失败: %v", err)
 		return fmt.Errorf("依赖安装失败: %w", err)
 	}
@@ -195,7 +195,11 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 //
 // force 来自 cluster create --force，含义与 install --force 一致：不看幂等状态重装一遍。
 // 这个标志此前一路传进来却没有任何消费点，加了与不加完全一样。
-func installDependencies(config *types.ClusterConfig, force bool) error {
+//
+// hosts 是这批资源要装到哪几台上。扩容时只装新来的那一台 —— 传全量的话，
+// 已在集群里的节点会被 alwaysApply 那几条重跑一遍（base-dependencies 会 swapoff、
+// 改 sysctl），加一台机器不该动到其他机器。
+func installDependencies(config *types.ClusterConfig, hosts []string, force bool) error {
 	utils.PrintInfo("正在准备安装Kubernetes %s...", config.Cluster.K8sConfig.Version)
 
 	catalog, err := loadK8sCatalog()
@@ -203,7 +207,6 @@ func installDependencies(config *types.ClusterConfig, force bool) error {
 		return err
 	}
 
-	hosts := getAllNodesIP(config)
 	names := k8sResourceNames(config)
 	utils.PrintInfo("待安装资源: %s", strings.Join(names, " -> "))
 
@@ -376,7 +379,7 @@ func prepareK8sCluster(config *types.ClusterConfig, skipPrecheck bool) error {
 	}
 
 	utils.PrintInfo("正在准备节点...")
-	if err := prepareK8sNodes(config); err != nil {
+	if err := prepareK8sNodes(config, config.Cluster.Nodes); err != nil {
 		utils.PrintError("节点准备失败: %v", err)
 		return fmt.Errorf("节点准备失败: %w", err)
 	}
@@ -384,14 +387,21 @@ func prepareK8sCluster(config *types.ClusterConfig, skipPrecheck bool) error {
 	return nil
 }
 
-// prepareK8sNodes 准备所有Kubernetes节点
-func prepareK8sNodes(config *types.ClusterConfig) error {
-	var hostsEntries strings.Builder
+// hostsEntries 拼出 /etc/hosts 里那一段。取的是配置里的全部节点，
+// 不是"这次要动的节点"：新加的一台也得认得原有的主机名。
+func hostsEntries(config *types.ClusterConfig) string {
+	var b strings.Builder
 	for _, node := range config.Cluster.Nodes {
-		hostsEntries.WriteString(fmt.Sprintf("%s\t%s\n", node.IP, node.Host))
+		b.WriteString(fmt.Sprintf("%s\t%s\n", node.IP, node.Host))
 	}
+	return b.String()
+}
 
-	for _, node := range config.Cluster.Nodes {
+// prepareK8sNodes 准备指定的这几台节点。扩容时只传新来的那一台。
+func prepareK8sNodes(config *types.ClusterConfig, nodes []types.RemoteNode) error {
+	entries := hostsEntries(config)
+
+	for _, node := range nodes {
 		utils.PrintStage(fmt.Sprintf("准备节点: %s (%s)", node.Host, node.IP))
 		startTime := time.Now()
 
@@ -402,7 +412,7 @@ func prepareK8sNodes(config *types.ClusterConfig) error {
 		}
 
 		utils.PrintInfo("正在配置hosts文件...")
-		if err := configureHostsFile(&node, hostsEntries.String()); err != nil {
+		if err := configureHostsFile(&node, entries); err != nil {
 			utils.PrintError("hosts配置失败: %v", err)
 			return fmt.Errorf("节点%s hosts配置失败: %w", node.Host, err)
 		}
