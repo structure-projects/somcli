@@ -20,6 +20,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -369,6 +370,53 @@ images:
 			}
 		})
 	}
+}
+
+// G9：pull/push 不带 -o/-i 时，不得被 export/import 的默认值 "images.tar.gz" 污染。
+//
+// 根因是 cmd/images.go 曾让四个子命令共用同一个包级变量来接 -o/-i，而 pflag 在
+// 注册时就把默认值写进变量 —— export/import 后注册，默认值 images.tar.gz 于是泄漏给
+// pull/push。症状：pull 成功后凭空在当前目录写一个名为 images.tar.gz 的 YAML 清单；
+// push 不带 -i 不去用内置默认清单，反而去读一个不存在的 images.tar.gz。
+// 这里把 somcli 的 CWD 指到临时目录，直接断言那个文件既不被写出、也不被读取。
+func TestG9_OutputInputDefaultsDontLeakBetweenSubcommands(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "docker.log")
+	bin := fakeDockerLifecycleDir(t, log, "no-such-mark")
+	list := writeImageList(t, "library/nginx:1.25")
+	cwd := t.TempDir()
+
+	// pull 不带 -o：成功后 CWD 下不得冒出 images.tar.gz。
+	runInDir(t, cwd, bin, "images", "pull", "-f", list)
+	if _, err := os.Stat(filepath.Join(cwd, "images.tar.gz")); err == nil {
+		t.Fatalf("pull 不带 -o 却在 CWD 写出了 images.tar.gz（标志默认值泄漏）")
+	}
+
+	// push 不带 -i：应当走内置默认清单（假 docker 让它成功），而不是报
+	// "open images.tar.gz: no such file"。
+	code, out := runInDir(t, cwd, bin, "images", "push", "-s", "all")
+	if code != 0 {
+		t.Fatalf("push 不带 -i 应使用内置清单而非读 images.tar.gz，退出码 %d，输出：\n%s", code, out)
+	}
+	if strings.Contains(out, "images.tar.gz") {
+		t.Errorf("push 不带 -i 却去读 images.tar.gz：\n%s", out)
+	}
+}
+
+// runInDir 在指定 CWD 下执行 somcli，PATH 指向假命令目录，返回退出码与输出。
+func runInDir(t *testing.T, cwd, binDir string, args ...string) (int, string) {
+	t.Helper()
+	bin := somcliBinary(t)
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = cwd
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "PATH="+binDir)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		code = exitErr.ExitCode()
+	} else if err != nil {
+		t.Fatalf("执行 %v 失败: %v\n%s", args, err, out)
+	}
+	return code, string(out)
 }
 
 // writeTarGz 造一个只含单个条目的 .tar.gz，条目名由调用方指定（含非法名字）。

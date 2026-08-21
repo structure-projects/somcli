@@ -23,12 +23,19 @@ import (
 	"github.com/structure-projects/somcli/pkg/images"
 )
 
+// 这些标志按子命令拆开，而不是 pull/push/export/import 共用同一个包级变量：
+// pflag 的 StringVar 在注册时就把默认值写进变量，而 pull/export 对 -o 的默认值不同
+// （"" vs "images.tar.gz"）、push/import 对 -i 同理。共用会让后注册的默认值泄漏到
+// 别的子命令 —— 于是 `images pull` 不带 -o 也会凭空写一个 images.tar.gz，
+// `images push` 不带 -i 会去读一个不存在的 images.tar.gz（G9）。
 var (
-	scope      string
-	repo       string
-	customFile string
-	inputFile  string
-	outputFile string
+	scope            string
+	repo             string
+	customFile       string
+	pullOutputFile   string
+	exportOutputFile string
+	pushInputFile    string
+	importInputFile  string
 )
 
 var imagesCmd = &cobra.Command{
@@ -45,7 +52,7 @@ var pullCmd = &cobra.Command{
 			Scope:      scope,
 			Repo:       repo,
 			CustomFile: customFile,
-			OutputFile: outputFile,
+			OutputFile: pullOutputFile,
 		}
 		if err := images.Pull(config); err != nil {
 			fmt.Printf("Error pulling images: %v\n", err)
@@ -61,7 +68,7 @@ var pushCmd = &cobra.Command{
 		config := images.Config{
 			Scope:     scope,
 			Repo:      repo,
-			InputFile: inputFile,
+			InputFile: pushInputFile,
 		}
 		if err := images.Push(config); err != nil {
 			fmt.Printf("Error pushing images: %v\n", err)
@@ -78,7 +85,7 @@ var exportCmd = &cobra.Command{
 			Scope:      scope,
 			Repo:       repo,
 			CustomFile: customFile,
-			OutputFile: outputFile,
+			OutputFile: exportOutputFile,
 		}
 		if err := images.Export(config); err != nil {
 			fmt.Printf("Error exporting images: %v\n", err)
@@ -94,7 +101,7 @@ var importCmd = &cobra.Command{
 		config := images.Config{
 			Scope:     scope,
 			Repo:      repo,
-			InputFile: inputFile,
+			InputFile: importInputFile,
 		}
 		if err := images.Import(config); err != nil {
 			fmt.Printf("Error importing images: %v\n", err)
@@ -108,23 +115,23 @@ func init() {
 	pullCmd.Flags().StringVarP(&scope, "scope", "s", "all", "Image scope (harbor|k8s|all)")
 	pullCmd.Flags().StringVarP(&repo, "repo", "r", "", "Target registry repository")
 	pullCmd.Flags().StringVarP(&customFile, "file", "f", "", "Custom image list file")
-	pullCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file for pulled images list")
+	pullCmd.Flags().StringVarP(&pullOutputFile, "output", "o", "", "Output file for pulled images list")
 
 	// Push command flags
 	pushCmd.Flags().StringVarP(&scope, "scope", "s", "all", "Image scope (harbor|k8s|all)")
 	pushCmd.Flags().StringVarP(&repo, "repo", "r", "", "Target registry repository")
-	pushCmd.Flags().StringVarP(&inputFile, "input", "i", "", "Input file with images list")
+	pushCmd.Flags().StringVarP(&pushInputFile, "input", "i", "", "Input file with images list")
 
 	// Export command flags
 	exportCmd.Flags().StringVarP(&scope, "scope", "s", "all", "Image scope (harbor|k8s|all)")
 	exportCmd.Flags().StringVarP(&repo, "repo", "r", "", "Source registry repository")
 	exportCmd.Flags().StringVarP(&customFile, "file", "f", "", "Custom image list file")
-	exportCmd.Flags().StringVarP(&outputFile, "output", "o", "images.tar.gz", "Output archive file")
+	exportCmd.Flags().StringVarP(&exportOutputFile, "output", "o", "images.tar.gz", "Output archive file")
 
 	// Import command flags
 	importCmd.Flags().StringVarP(&scope, "scope", "s", "all", "Image scope (harbor|k8s|all)")
 	importCmd.Flags().StringVarP(&repo, "repo", "r", "", "Target registry repository")
-	importCmd.Flags().StringVarP(&inputFile, "input", "i", "images.tar.gz", "Input archive file")
+	importCmd.Flags().StringVarP(&importInputFile, "input", "i", "images.tar.gz", "Input archive file")
 
 	// Add subcommands
 	imagesCmd.AddCommand(pullCmd)

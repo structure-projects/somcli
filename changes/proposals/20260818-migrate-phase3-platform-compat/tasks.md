@@ -54,17 +54,22 @@
   - cleanup：`docker rmi` 只删**本地**标签，目标 registry 中已推送镜像不受影响；且仅在 push 成功后执行（已加测试锁定）
 - [x] `test/local/images_test.go`：pull / save / load / list 全生命周期（SC-C05）
   - export(save) 产合法 gzip、失败删半截归档；import(load) 逐条 docker load；坏归档拒绝
+  - 评审中实测暴露并修复 G9：`cmd/images.go` 四个子命令共用 -o/-i 包级变量，
+    export/import 的默认 `images.tar.gz` 泄漏给 pull/push；已拆分变量并加回归用例
 
 ## 测试
 
-- [ ] `go test ./...` 全绿
-- [ ] `test/matrix.yaml` 达到 **82/82 done**
+- [x] `go test ./...` 全绿（含 `go vet` 四组 build tag：remote/multinode/cluster/swarm）
+- [~] `test/matrix.yaml` 本机可验部分 **55/90 done**
+  - 剩余 35 项全部为 CI/集成承载：distro 矩阵（SC-P01..P06）、arm64/操作机矩阵（SC-P07..P09）、
+    真集群/真 swarm（SC-K*/SC-S*）、多节点（SC-D10）、远程 SSH（SC-F03）、manifest apply（SC-C06/M06）、
+    节点 docker 安装（SC-C01/C02）。这些按既定方针在 CI 转绿前保持 pending，不靠本机臆造 done。
 
 ## 评审
 
-- [ ] 通过 expert-review（产出 `review.md`）
-- [ ] 修复所有 MUST fix 项
-- [ ] SHOULD fix 项已评估
+- [x] 通过 expert-review（产出 `review.md`），结论：通过（无 MUST fix）
+- [x] 修复所有 MUST fix 项（无）
+- [x] SHOULD fix 项已评估：S1（build.sh 版本号写死）已修；S2（harbor 安装链 e2e 兜底）记后续；S3（changelog）归入归档步骤
 
 ## 归档
 

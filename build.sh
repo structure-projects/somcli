@@ -20,8 +20,9 @@
 # Makefile 的 build-all 与 .github/workflows/go.yml 都委托本脚本，请勿在别处另列目标。
 
 # 版本信息配置
-VERSION="v1.0.0"
-COMMIT=$(git rev-parse HEAD)
+# 版本号从 git tag 派生，与 Makefile 同源；写死 v1.0.0 会让发版产物版本号全错。
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.0.0-unknown")
+COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 # 清理并创建输出目录
