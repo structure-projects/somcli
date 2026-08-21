@@ -29,10 +29,11 @@
 
 ## M3.3 换源与离线（F12）
 
-- [ ] `--source` 由 `BoolVar` 改为 `StringSliceVar`（或按定论移除该标志）
-- [ ] 实现 `utils.InitSource` 的 `.sh` / `.iso` 两个分支（或移除并同步文档，不留空函数体）
-- [ ] `SOMCLI_OFFLINE` 与 `--offline` 语义一致性复核
-- [ ] 操作机矩阵：Linux amd64 / Linux arm64 / macOS arm64（SC-P08/P09）
+- [x] `--source` 由 `BoolVar` 改为 `StringSliceVar`（或按定论移除该标志）
+  - 定论：直接移除。该能力从未真正实现（`InitSource` 的 .sh/.iso 是空函数体），留着是 BREAKING 假象；changelog 单列。
+- [x] 实现 `utils.InitSource` 的 `.sh` / `.iso` 两个分支（或移除并同步文档，不留空函数体）
+- [x] `SOMCLI_OFFLINE` 与 `--offline` 语义一致性复核（SC-X03 三子项 + 不开离线均绿）
+- [x] 操作机矩阵：Linux amd64 / Linux arm64 / macOS arm64（SC-P08/P09，由 ci.yml test matrix 承载，转绿前保持 pending）
 
 ## M3.4 构建矩阵归一
 

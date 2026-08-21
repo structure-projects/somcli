@@ -1,10 +1,6 @@
 offline: true
 debug: true
 github_proxy: https://gh-proxy.com/
-mirrors_source:
-  - ./scripts/CentosAliyunMirrors.sh # SH脚本则是通过SH脚本切换源 阿里源 https://mirrors.aliyun.com/centos/ # 华为源 https://mirrors.huaweicloud.com/home #清华源 https://mirrors.tuna.tsinghua.edu.cn/、
-  # - ./scripts/naidia-source.sh # 添加显卡驱动源 -- 可以添加多个源但是系统源只能添加一个
-  # - /opt/somwork/download/centos/7.9/centos7.iso # ISO 则是挂载镜像加载源 一般情况下二选一
 resources:
   # 下载系统镜像
   # - name: "centos"

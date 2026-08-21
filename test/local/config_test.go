@@ -112,8 +112,8 @@ resources:
 
 // TestSC_F07_GlobalSettingsKeysAccepted 全局设置键必须被接受并生效。
 //
-// 严格解析的另一面：示例配置里写了 offline / debug / workdir / github_proxy /
-// mirrors_source，它们此前既解析不到又无人消费。改严格解析之后，如果不同时补上字段，
+// 严格解析的另一面：示例配置里写了 offline / debug / workdir / github_proxy，
+// 它们此前既解析不到又无人消费。改严格解析之后，如果不同时补上字段，
 // 所有现有示例会全部报错 —— 那就从"静默失效"变成"直接不可用"。
 // 这里用 debug 做判据：配置里打开它，输出就该出现 [DEBUG]。
 func TestSC_F07_GlobalSettingsKeysAccepted(t *testing.T) {

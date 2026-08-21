@@ -381,9 +381,6 @@ func applyGlobalSettings(cfg *types.ResourceConfig) {
 	if cfg.WorkDir != "" && viper.GetString("workdir") == "" {
 		viper.Set("workdir", cfg.WorkDir)
 	}
-	if len(cfg.MirrorsSource) > 0 {
-		InitSource(cfg.MirrorsSource)
-	}
 	SetConfigVars(cfg.Vars)
 }
 

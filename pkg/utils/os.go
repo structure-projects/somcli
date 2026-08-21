@@ -16,7 +16,6 @@ limitations under the License.
 package utils
 
 import (
-	"path/filepath"
 	"runtime"
 )
 
@@ -39,20 +38,5 @@ func GetUnameArch() string {
 		return "i386"
 	default:
 		return runtime.GOARCH
-	}
-}
-
-func InitSource(sources []string) {
-	PrintInfo("加载源 -> %s", sources)
-
-	for _, source := range sources {
-		ext := filepath.Ext(source)
-		PrintDebug("Init source -> %s , ext -> %s", source, ext)
-		if ext == ".iso" {
-
-		}
-		if ext == ".sh" {
-
-		}
 	}
 }

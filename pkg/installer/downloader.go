@@ -28,7 +28,7 @@ import (
 // LoadDownloadConfig 加载下载配置文件。
 //
 // 直接委托 utils.LoadConfig：否则 download 与 install 读同一份文件会得到不同结果 ——
-// 配置里的 offline / workdir / mirrors_source 只在 install 那条路径上生效。
+// 配置里的 offline / workdir 只在 install 那条路径上生效。
 // 统一配置的前提是"哪条命令读都一样"。
 func LoadDownloadConfig(configPath string) (*types.ResourceConfig, error) {
 	return utils.LoadConfig(configPath)

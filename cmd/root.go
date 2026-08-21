@@ -31,7 +31,6 @@ var (
 	workDir     string   //工作目录
 	debugMode   bool     // 新增debug模式标志
 	offline     bool     // 是否离线模式
-	source      []string // 镜像源，可逗号分隔或重复传
 	setVars     []string // --set k=v，覆盖配置里的 vars
 )
 var rootCmd = &cobra.Command{
@@ -105,20 +104,15 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&githubProxy, "github-proxy", "", "GitHub proxy URL (e.g. https://gh-proxy.com/)")
 	rootCmd.PersistentFlags().StringVar(&workDir, "workdir", "", "working directory (default is ./somwork if exists, otherwise current directory)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode") // 新增debug标志
-	// 帮助里一直写着"comma-separated or multiple flags"，类型却是 bool：绑到
-	// mirrors_source 后 GetStringSlice 读回 ["false"]，于是每条命令都白跑一次 InitSource
-	// 并打印一行"加载源 -> [false]"，而配置文件里真正的 mirrors_source 被它盖掉。
-	rootCmd.PersistentFlags().StringSliceVar(&source, "source", nil, "Mirror sources (comma-separated or multiple flags)")
-	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "enable 离线模式") // 新增debug标志 Mirror source
+	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "enable 离线模式")
 	rootCmd.PersistentFlags().StringArrayVar(&setVars, "set", nil,
 		"Set a template variable, repeatable (e.g. --set port=8080). Overrides vars: in the config file")
 
 	// 绑定viper
 	viper.BindPFlag("github_proxy", rootCmd.PersistentFlags().Lookup("github-proxy"))
 	viper.BindPFlag("workdir", rootCmd.PersistentFlags().Lookup("workdir"))
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))           // 绑定debug到viper
-	viper.BindPFlag("mirrors_source", rootCmd.PersistentFlags().Lookup("source")) // 绑定debug到viper
-	viper.BindPFlag("offline", rootCmd.PersistentFlags().Lookup("offline"))       // 绑定debug到viper
+	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
+	viper.BindPFlag("offline", rootCmd.PersistentFlags().Lookup("offline"))
 }
 
 func initConfig() {
@@ -150,12 +144,6 @@ func initConfig() {
 		}
 	}
 	verifyProxyConfig()
-
-	//初始化源
-	if sourceList := viper.GetStringSlice("mirrors_source"); len(sourceList) > 0 {
-		utils.InitSource(sourceList)
-	}
-
 }
 
 func verifyProxyConfig() {
