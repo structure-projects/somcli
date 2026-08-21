@@ -85,7 +85,10 @@
       —— 新开第五个测试组 `swarm`：multinode 那组容器 PID 1 不是 systemd，装不上 docker；
       也不与 cluster 组共用容器（装 docker 会覆盖 containerd 配置串台），见 proposal「偏差 23」。
       判据不止 `docker node ls` 的字面，还要这套 swarm 真能调度起服务
-- [ ] F11：清理 `generateKubeadmConfig`、`SSHExec`、`SSHExecWithOutput`、`SSHClient`、`RsyncCopy`、`GetDownloadURL`、`NormalizeVersion` 等死代码（删除前 grep 确认零引用，独立提交）
+- [x] F11：清理 `generateKubeadmConfig`、`SSHExec`、`SSHExecWithOutput`、`SSHClient`、`RsyncCopy`、`GetDownloadURL`、`NormalizeVersion` 等死代码（删除前 grep 确认零引用，独立提交）
+      —— 顺带删掉仅被它们调用的 `getSSHConfig` / `SSHClient` 帮手、`SystemInfo` 一族、
+      `rsyncVersionAtLeast` / `compareVersions`，以及备份文件 `kubernetes.go_bak`；
+      不再有代码引用 `golang.org/x/crypto/ssh`，go.mod 已 tidy
 
 ## 测试
 

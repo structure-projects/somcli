@@ -225,13 +225,6 @@ func GetWorkTmpDir() string {
 	return filepath.Join(GetWorkDir(), "tmp")
 }
 
-func NormalizeVersion(version string) string {
-	if !strings.HasPrefix(version, "v") {
-		return "v" + version
-	}
-	return version
-}
-
 // TemplateContext 是模板可见的全部变量。
 //
 // 只有这一份：脚本上下文与 target/URL 上下文各自写一份结构体的时候，两份必然漂移 ——

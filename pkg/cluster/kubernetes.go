@@ -303,48 +303,6 @@ func configureKubectl(node *types.RemoteNode) error {
 	return nil
 }
 
-// generateKubeadmConfig 生成kubeadm配置文件
-func generateKubeadmConfig(node *types.RemoteNode, config *types.ClusterConfig) (string, error) {
-	runtime := config.Cluster.K8sConfig.ContainerRuntime
-	if runtime == "" {
-		runtime = "containerd"
-	}
-
-	criSocket := "unix:///var/run/containerd/containerd.sock"
-	if runtime == "docker" {
-		criSocket = "unix:///var/run/dockershim.sock"
-	}
-
-	kubeadmConfig := fmt.Sprintf(`apiVersion: kubeadm.k8s.io/v1beta3
-kind: InitConfiguration
-nodeRegistration:
-  criSocket: %s
-  name: %s
----
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: ClusterConfiguration
-kubernetesVersion: %s
-apiServer:
-  certSANs:
-  - "%s"
-controlPlaneEndpoint: "%s:6443"
-networking:
-  podSubnet: "%s"
-  serviceSubnet: "%s"
-`, criSocket, node.Host,
-		config.Cluster.K8sConfig.Version,
-		node.IP, node.IP,
-		config.Cluster.K8sConfig.PodNetworkCidr,
-		config.Cluster.K8sConfig.ServiceCidr)
-
-	// 添加镜像仓库配置
-	if config.Cluster.K8sConfig.ImageRepository != "" {
-		kubeadmConfig += fmt.Sprintf("imageRepository: %s\n", config.Cluster.K8sConfig.ImageRepository)
-	}
-
-	return kubeadmConfig, nil
-}
-
 // getAllNodesIP 获取所有节点IP
 func getAllNodesIP(config *types.ClusterConfig) []string {
 	hosts := []string{}
