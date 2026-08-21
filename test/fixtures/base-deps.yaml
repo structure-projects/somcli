@@ -1,0 +1,13 @@
+# 跨发行版的最小基础依赖清单 —— 专门给 .github/workflows/integration.yml 的
+# 发行版矩阵用：在 centos7 / rockylinux9 / ubuntu22.04 / debian12 / leap15 / alpine
+# 上各跑一遍，证明 method: package 真的经各自的包管理器把包装上了。
+#
+# 选 make 而不是 jq：五个发行版的官方源里包名都叫 make，最小镜像默认不带，
+# 装完能用 `make --version` 自证。jq 在 CentOS 7 上要先装 EPEL，会把"包管理器
+# 能不能用"和"EPEL 通不通"两件事搅在一起。
+resources:
+  - name: base-deps
+    version: system
+    method: package
+    package: make
+    check: "command -v make"

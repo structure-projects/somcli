@@ -74,10 +74,9 @@ func runMethodScripts(res types.Resource, cmds []string) (utils.RunOutcome, erro
 	return utils.RunScriptsDetailed(cmds, res)
 }
 
-// shellQuote 把字符串包成单引号形式的 shell 字面量。
-// 配置里的路径带空格是常事，不引起来的话生成的命令会被 sh 拆成两个参数。
+// shellQuote 是 utils.ShellQuote 在 installer 内的快捷方式，各 method 拼 shell 时统一用它。
 func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return utils.ShellQuote(s)
 }
 
 // archiveExtractCmd 返回把归档解到 dir 的命令，不是归档则返回空串。

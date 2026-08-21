@@ -5,19 +5,19 @@
 
 ## 准备
 
-- [ ] M2 已归档，`current-proposal` 已切到本提案
-- [ ] 阅读 `proposal.md` 与技术附录 §4.3 / §4.5 / §5.2 Phase 3 / §6.7
-- [ ] 切 `feat-platform-compat` 分支
+- [x] M2 已归档，`current-proposal` 已切到本提案
+- [x] 阅读 `proposal.md` 与技术附录 §4.3 / §4.5 / §5.2 Phase 3 / §6.7
+- [x] 切 `feat-platform-compat` 分支
 - [ ] 定论总纲待决事项 1（windows 产物）与 2（arm64 支持级别）
 
 ## M3.1 发行版抽象（F10）
 
-- [ ] `pkg/utils` 新增包管理器探测：`yum` / `dnf` / `apt` / `zypper` / `apk`
-- [ ] 一个包管理器一组命令模板（install / remove / update / query），禁止业务代码里再出现裸 `yum`
-- [ ] `method: package` 消费该抽象
-- [ ] `test/fixtures/base-deps.yaml`：跨发行版的最小基础依赖清单
-- [ ] `integration.yml` 增 `distro-matrix` job：centos7 / rockylinux9 / ubuntu22.04 / debian12 / opensuse-leap15（SC-P01..P06）
-- [ ] CentOS 7 源不可用时的处置（vault 源或标注允许失败）
+- [x] `pkg/utils` 新增包管理器探测：`yum` / `dnf` / `apt` / `zypper` / `apk`
+- [x] 一个包管理器一组命令模板（install / remove / update / query），禁止业务代码里再出现裸 `yum`
+- [x] `method: package` 消费该抽象
+- [x] `test/fixtures/base-deps.yaml`：跨发行版的最小基础依赖清单
+- [x] `integration.yml` 增 `distro-matrix` job：centos7 / rockylinux9 / ubuntu22.04 / debian12 / opensuse-leap15（SC-P01..P06）
+- [x] CentOS 7 源不可用时的处置（vault 源或标注允许失败）
 
 ## M3.2 架构参数化
 

@@ -117,6 +117,12 @@ func GetCurrentDir() string {
 	return dir
 }
 
+// ShellQuote 把字符串包成单引号形式的 shell 字面量。
+// 配置里的包名、路径带空格或特殊字符是常事，不引起来会被 sh 拆成多个参数。
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // IsURL 检查字符串是否是URL
 func IsURL(str string) bool {
 	u, err := url.Parse(str)
