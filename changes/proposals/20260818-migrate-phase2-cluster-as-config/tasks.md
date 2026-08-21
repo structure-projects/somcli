@@ -70,7 +70,10 @@
 - [x] F9（前半）：无 VIP/LB 时明确拒绝并给出指引，local 组用例覆盖：配置声明 3 个 master 且无 VIP 时，
       `cluster create` 在连节点之前非 0 退出并指名 `controlPlaneEndpoint`（SC-K05）
 - [ ] 版本矩阵 1.28 / 1.29 / 1.30（SC-K08）
-- [ ] `cluster remove` 后环境干净，无 `/etc/kubernetes` 残留（SC-K11）
+- [x] `cluster remove` 后环境干净，无 `/etc/kubernetes` 残留（SC-K11）
+      —— 顺带修了原实现四处：`kubeadm reset` 少 `--cri-socket`、重置顺序反了、
+      CNI 网桥没删；iptables 故意不动（见 proposal「偏差 21」）。
+      判据是"再装一遍能成"，不是"目录没了"
 - [ ] 扩容新增 worker（SC-K12）、缩容 drain + delete + reset（SC-K13）
 - [ ] Swarm 全生命周期多节点覆盖（SC-S01..S04）
 - [ ] F11：清理 `generateKubeadmConfig`、`SSHExec`、`SSHExecWithOutput`、`SSHClient`、`RsyncCopy`、`GetDownloadURL`、`NormalizeVersion` 等死代码（删除前 grep 确认零引用，独立提交）

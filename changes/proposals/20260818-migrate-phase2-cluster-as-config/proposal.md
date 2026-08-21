@@ -363,6 +363,29 @@ haproxy（四层转发，apiserver 是 TLS 终结方，中间这一跳不能拆�
 重装出来的集群用的还是上一次的 kubeconfig，证书早就不匹配了。改成 `cp -f`，
 并且每台 master 都配一遍（登上任意一台 master 敲 kubectl 都该能用）。
 
+### 偏差 21：`cluster remove` 原来重置得不干净（SC-K11）
+
+原实现是"每个节点按配置顺序跑一遍 `kubeadm reset -f` 加 `rm -rf`"。四处不对：
+
+- **少 `--cri-socket`**：节点上同时存在多个 CRI 端点时 `kubeadm reset` 直接报错退出，
+  接在后面的清理照样跑，于是"报错了但看着删干净了"。join 那边早就带上了这个参数；
+- **顺序反了**：`kubeadm reset` 会顺手把自己从集群里摘掉（删 Node 对象、退出 etcd
+  成员列表），这要 apiserver 还活着。先重置第一台 master 的话，后面每台都摘不掉，
+  残留的 Node 与 etcd 成员会让下一次安装装到一半卡住。改为 worker 先、
+  其他 master 次之、第一台 master 最后；
+- **CNI 的网桥没删**：`kubeadm reset` 不碰 `cni0` / `flannel.1` / `tunl0` /
+  `vxlan.calico` / `kube-ipvs0`，也不删 `/etc/cni/net.d`。留着的表现不是"装不上"，
+  而是装上之后 Pod 拿到上一次网段里的地址、跨节点不通 —— 排查方向会被带到 CNI 上；
+- **iptables 故意不动**：kube-proxy 那批规则确实留着，但 `iptables -F` 会连宿主上
+  无关的规则一起冲掉（最典型的是 docker 的 NAT）。代价是重装后可能残留几条指向
+  已消失 Service 的规则，比冲掉宿主网络轻。这一条在代码里写明了原因。
+
+用例 `test/cluster/lifecycle_test.go` 的最终判据不取"某个目录没了" —— `rm -rf`
+谁都会写，那种断言太容易糊过去。判据是**同一套节点上再装一遍能成**，
+并且新集群里的 Pod 地址仍落在配置的网段内（上一次的网桥没清掉时这里会露出来）。
+目录 / kubelet / 网桥的检查保留，但只作为失败时的定位信息。
+重装前不做 `resetCluster` —— 替它清场就什么也没验了。
+
 ### 待办：`cluster create --force` 是个死标志
 
 `cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s

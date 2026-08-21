@@ -890,27 +890,13 @@ func RemoveK8sCluster(config *types.ClusterConfig, force bool) error {
 	}
 
 	utils.PrintStage("== 集群移除流程 ==")
-	for _, node := range config.Cluster.Nodes {
+	for _, node := range resetOrder(config) {
 		utils.PrintStage(fmt.Sprintf("正在重置节点: %s (%s)", node.Host, node.IP))
 		startTime := time.Now()
 
-		utils.PrintInfo("正在执行kubeadm reset...")
-		if _, err := utils.RunCommandOnNode(&node, " kubeadm reset -f"); err != nil {
+		if err := resetK8sNode(&node, config); err != nil {
 			utils.PrintError("节点重置失败: %v", err)
-			return fmt.Errorf("节点%s重置失败: %w", node.Host, err)
-		}
-
-		utils.PrintInfo("正在清理配置...")
-		cleanupCmds := []string{
-			" rm -rf /etc/cni/net.d",
-			" rm -rf $HOME/.kube",
-			" rm -rf /etc/kubernetes",
-		}
-
-		for _, cmd := range cleanupCmds {
-			if _, err := utils.RunCommandOnNode(&node, cmd); err != nil {
-				utils.PrintWarning("清理操作失败: %s: %v", cmd, err)
-			}
+			return err
 		}
 
 		duration := time.Since(startTime)
@@ -920,6 +906,76 @@ func RemoveK8sCluster(config *types.ClusterConfig, force bool) error {
 	duration := time.Since(startTime)
 	utils.PrintSuccess("\n✓ Kubernetes集群 '%s' 移除成功!", config.Cluster.Name)
 	utils.PrintInfo("总执行时间: %v", duration.Round(time.Second))
+
+	return nil
+}
+
+// resetOrder 给出重置节点的顺序：worker 先，第一台 master 最后。
+//
+// 顺序是有讲究的：`kubeadm reset` 会顺手把自己从集群里摘掉（删 Node 对象、
+// 从 etcd 成员列表里退出），而这要 apiserver 还活着。反过来先拆第一台 master 的话，
+// 后面每台都少做这一步，只是"本机文件删了"，别处的集群视图里它们还在。
+func resetOrder(config *types.ClusterConfig) []types.RemoteNode {
+	first := findFirstMasterNode(config)
+
+	ordered := make([]types.RemoteNode, 0, len(config.Cluster.Nodes))
+	for i := range config.Cluster.Nodes {
+		if !strings.EqualFold(config.Cluster.Nodes[i].Role, "master") {
+			ordered = append(ordered, config.Cluster.Nodes[i])
+		}
+	}
+	for i := range config.Cluster.Nodes {
+		n := config.Cluster.Nodes[i]
+		if strings.EqualFold(n.Role, "master") && (first == nil || n.IP != first.IP) {
+			ordered = append(ordered, n)
+		}
+	}
+	if first != nil {
+		ordered = append(ordered, *first)
+	}
+	return ordered
+}
+
+// resetK8sNode 把一个节点上的 k8s 抹掉。
+//
+// 「抹干净」的判据是这台机器还能再装一遍（SC-K11）。因此除了 kubeadm reset，
+// 还得处理它明确不管的两样东西：
+//   - CNI 留下的网桥与隧道口。不删的话下一次装出来的 Pod 会拿到上一次网段里的地址，
+//     表现是跨节点不通，而不是"上次没清干净"；
+//   - `/etc/cni/net.d`。kubeadm reset 只在有 CNI 配置时提示你自己删。
+func resetK8sNode(node *types.RemoteNode, config *types.ClusterConfig) error {
+	utils.PrintInfo("正在执行kubeadm reset...")
+	// 必须指明 CRI 端点：节点上同时装了 docker 与 containerd 时，
+	// kubeadm 检测到多个 socket 直接报错要求显式指定 —— 与 join 是同一个道理。
+	resetCmd := "kubeadm reset -f --cri-socket " + criSocket(config.Cluster.K8sConfig.ContainerRuntime)
+	if output, err := utils.RunCommandOnNode(node, resetCmd); err != nil {
+		return fmt.Errorf("节点%s重置失败: %w\n输出: %s", node.Host, err, output)
+	}
+
+	utils.PrintInfo("正在清理配置...")
+	cleanupCmds := []string{
+		"rm -rf /etc/cni/net.d",
+		"rm -rf $HOME/.kube",
+		"rm -rf /etc/kubernetes",
+		// 每种 CNI 留下的口不一样，删不掉的（本来就没有）忽略。
+		"ip link delete cni0 2>/dev/null || true",
+		"ip link delete flannel.1 2>/dev/null || true",
+		"ip link delete tunl0 2>/dev/null || true",
+		"ip link delete vxlan.calico 2>/dev/null || true",
+		"ip link delete kube-ipvs0 2>/dev/null || true",
+	}
+	for _, cmd := range cleanupCmds {
+		if output, err := utils.RunCommandOnNode(node, cmd); err != nil {
+			// 清理失败不致命，但要说出是哪一条没成 —— 下一次装不上时这行日志是唯一线索。
+			utils.PrintWarning("清理操作失败: %s: %v\n输出: %s", cmd, err, output)
+		}
+	}
+
+	// kube-proxy 写的 iptables 规则由 kubeadm reset 提示"需要自己清"，这里不动：
+	// 那些链与宿主上别的规则混在一条表里，无条件 flush 会顺手废掉用户自己的规则
+	// （最典型的是 docker 的 NAT）。重装不受它影响 —— kube-proxy 起来会重建。
+	utils.PrintInfo("提示：kube-proxy 留下的 iptables 规则未清理，重装时会被覆盖；" +
+		"要彻底清可在节点上执行 iptables -t nat -F（会影响该机上其他规则）")
 
 	return nil
 }
