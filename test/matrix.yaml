@@ -396,7 +396,9 @@ scenarios:
     status: pending
 
   - id: SC-K04
-    desc: 3 master HA（--control-plane-endpoint + --upload-certs）
+    # 用例按 2 master 做：etcd 的仲裁数在 2 与 3 上没有区别（都得全活），
+    # 而"第二台 master 真的进了控制面"是同一个判据，第三台只多花一份内存。
+    desc: 多 master HA（--control-plane-endpoint + --upload-certs）
     env: [cluster]
     files: [test/cluster/ha_test.go]
     defects: [F9]

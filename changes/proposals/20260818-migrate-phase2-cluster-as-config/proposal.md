@@ -345,6 +345,24 @@ SC-K10（NodePort）从 `single_node_test.go` 移到 `multi_node_test.go`：
 节点上那份二进制单独按 `GOOS=linux` 编：TestMain 编的那份是给操作机用的，
 操作机可能是 macOS，否则这条用例会挂在"二进制格式不对"这种与被测行为无关的地方。
 
+### 偏差 20：SC-K04 按 2 master 做，fixture 里多一台 haproxy
+
+方案与 `test/matrix.yaml` 原写的是"3 master HA"。实际用 2 master：
+
+- 判据是"第二台 master 真的进了控制面"（带 control-plane 角色、上面有 etcd 与
+  apiserver 的静态 Pod、etcd 成员数为 2），第三台只多花一份内存，不多回答任何问题；
+- 节点是同一台 runner 上的容器，三个 apiserver + 三个 etcd 挤在一起，
+  失败会更多地来自资源不足而不是 somcli。
+
+`controlPlaneEndpoint` 必须指向一个不随单机存亡的地址，因此 fixture 里加了一台
+haproxy（四层转发，apiserver 是 TLS 终结方，中间这一跳不能拆包）。
+不用"指向第一台 master 的 IP"顶替：那样装出来的仍是单点集群，
+而用例会给这种配置形态发一张通过证。
+
+顺带修的一处：配 kubectl 用的是 `cp -i`，没有终端时读到 EOF 就放弃覆盖 ——
+重装出来的集群用的还是上一次的 kubeconfig，证书早就不匹配了。改成 `cp -f`，
+并且每台 master 都配一遍（登上任意一台 master 敲 kubectl 都该能用）。
+
 ### 待办：`cluster create --force` 是个死标志
 
 `cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s

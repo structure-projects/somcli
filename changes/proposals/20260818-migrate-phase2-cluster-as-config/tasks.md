@@ -61,7 +61,10 @@
 
 ## M2.4 多 master / 生命周期 / Swarm / 清理
 
-- [ ] F9：`kubeadm init` 加 `--upload-certs`，实现 `joinMaster`（SC-K04）
+- [x] F9：`kubeadm init` 加 `--upload-certs`，实现 `joinMaster`（SC-K04）
+      —— `joinMasterNodes` 现场重新上传证书取 key，join 时带 `--control-plane`
+      与本机 `--apiserver-advertise-address`；失败不再只打警告。
+      fixture 加了第二台 master 与一台 haproxy 充当稳定入口（见 proposal「偏差 20」）
       —— `--control-plane-endpoint` 已在 M2.1 接上（配置键 `controlPlaneEndpoint`），
       但 `joinMaster` 仍是空壳，多 master 目前只是"不再假装成功"
 - [x] F9（前半）：无 VIP/LB 时明确拒绝并给出指引，local 组用例覆盖：配置声明 3 个 master 且无 VIP 时，

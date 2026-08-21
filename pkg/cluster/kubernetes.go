@@ -152,7 +152,19 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	}
 	utils.PrintSuccess("✓ 网络插件部署完成")
 
-	// 5. 工作节点加入
+	// 5. 其他主节点加入
+	//
+	// 排在 CNI 之后、worker 之前：控制面节点同样要等 CNI 才 Ready，
+	// 而 worker 加入时若控制面还没齐，kube-proxy 之类的 DaemonSet 会先在残缺的
+	// 控制面上铺一遍，后加进来的 master 上就少了它们。
+	utils.PrintStage("== 其他主节点加入 ==")
+	if err := joinMasterNodes(config); err != nil {
+		utils.PrintError("主节点加入失败: %v", err)
+		return fmt.Errorf("主节点加入失败: %w", err)
+	}
+	utils.PrintSuccess("✓ 其他主节点加入完成")
+
+	// 6. 工作节点加入
 	utils.PrintStage("== 工作节点加入 ==")
 	if err := joinWorkerNodes(config); err != nil {
 		utils.PrintError("工作节点加入失败: %v", err)
@@ -160,7 +172,7 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	}
 	utils.PrintSuccess("✓ 工作节点加入完成")
 
-	// 6. 集群信息展示
+	// 7. 集群信息展示
 	utils.PrintStage("== 集群信息展示 ==")
 	if err := printK8sClusterInfo(config, masterNode); err != nil {
 		utils.PrintError("集群信息展示失败: %v", err)
@@ -223,10 +235,15 @@ func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
 	)
 
 	// 有稳定入口就交给 kubeadm：证书 SAN 与 admin.conf 都会指向它而不是这台机器的 IP。
-	// 只写在 init 上还不够让多 master 真的成立（joinMaster 仍是空壳），但少了这一句，
-	// 后来补上的 join 也接不到正确的地址。
 	if endpoint := strings.TrimSpace(config.Cluster.K8sConfig.ControlPlaneEndpoint); endpoint != "" {
 		initCmd += fmt.Sprintf(" --control-plane-endpoint=%s", endpoint)
+	}
+
+	// 多 master 才加 --upload-certs：它把控制面证书存成 kube-system 下的一个 Secret，
+	// 后面的 master 凭 certificate-key 取回来，不必手工拷 /etc/kubernetes/pki。
+	// 单 master 不加，免得白留一份带证书的 Secret（两小时后自动过期，但也没必要有）。
+	if len(findMasterNodes(config)) > 1 {
+		initCmd += " --upload-certs"
 	}
 
 	initCmd += " --cri-socket " + criSocket(config.Cluster.K8sConfig.ContainerRuntime)
@@ -253,32 +270,32 @@ func initK8sMaster(node *types.RemoteNode, config *types.ClusterConfig) error {
 	// join 时现场用 kubeadm token create --print-join-command 生成，见 joinWorkerNodes。
 
 	utils.PrintInfo("正在配置kubectl...")
-	cmds := []string{
-		"mkdir -p $HOME/.kube",
-		" cp -i /etc/kubernetes/admin.conf $HOME/.kube/config",
-		" chown $(id -u):$(id -g) $HOME/.kube/config",
-	}
-
-	for _, cmd := range cmds {
-		if _, err := utils.RunCommandOnNode(node, cmd); err != nil {
-			utils.PrintError("命令执行失败: %s: %v", cmd, err)
-			return fmt.Errorf("kubectl配置失败: %w", err)
-		}
-	}
-
-	// 检查是否其他主节点，同步主节点配置
-	masterList := findMasterNodes(config)
-	for _, masterNode := range masterList {
-		if masterNode.IP != findFirstMasterNode(config).IP {
-			err := joinMaster(masterNode, config)
-			if nil != err {
-				utils.PrintWarning("master %s join failed!", masterNode.IP)
-			}
-		}
+	if err := configureKubectl(node); err != nil {
+		return err
 	}
 
 	duration := time.Since(startTime)
 	utils.PrintSuccess("✓ 主节点初始化完成，耗时: %v", duration.Round(time.Second))
+	return nil
+}
+
+// configureKubectl 把 admin.conf 放到目标节点的 $HOME/.kube/config。
+//
+// 每个控制面节点都要做一遍：登上任意一台 master 敲 kubectl 都该能用，
+// 而 admin.conf 是 kubeadm 各自在本机生成的，不会自己进 $HOME。
+func configureKubectl(node *types.RemoteNode) error {
+	for _, cmd := range []string{
+		"mkdir -p $HOME/.kube",
+		// -f 而不是 -i：-i 在没有终端时读到 EOF 就放弃覆盖，于是重装出来的集群
+		// 用的还是上一次的 kubeconfig，证书早就不匹配了。
+		"cp -f /etc/kubernetes/admin.conf $HOME/.kube/config",
+		"chown $(id -u):$(id -g) $HOME/.kube/config",
+	} {
+		if output, err := utils.RunCommandOnNode(node, cmd); err != nil {
+			utils.PrintError("命令执行失败: %s: %v", cmd, err)
+			return fmt.Errorf("在 %s 上配置 kubectl 失败: %w\n输出: %s", node.Host, err, output)
+		}
+	}
 	return nil
 }
 
@@ -610,11 +627,105 @@ func deployCNI(masterNode *types.RemoteNode, config *types.ClusterConfig) error 
 	return nil
 }
 
-// 其他的master 上执行加入master
-func joinMaster(node types.RemoteNode, config *types.ClusterConfig) error {
-	//加入master节点
-	utils.PrintDebug("node %v, config, %v", node, config)
+// joinMasterNodes 把第一台之外的 master 加入控制面（F9）。
+//
+// 原先这里是个空壳（打一行 debug 就 return nil），且失败只打警告 ——
+// 配了三个 master 的用户拿到的是"创建成功"和一个单点集群，
+// 而这件事要到第一台 master 宕掉、整个集群跟着不可用时才暴露。
+//
+// 加入控制面比加 worker 多两样东西：
+//   - --control-plane：告诉 kubeadm 这台要起 apiserver/etcd，不是单纯的 kubelet；
+//   - --certificate-key：取回 init 时 --upload-certs 存进 kube-system 的那份控制面证书。
+//     这个 Secret 两小时后过期，所以每台 master 加入前都现场重新上传一次，
+//     而不是把 init 输出里那个 key 存下来反复用。
+func joinMasterNodes(config *types.ClusterConfig) error {
+	masters := findMasterNodes(config)
+	if len(masters) <= 1 {
+		utils.PrintInfo("只有一个主节点，跳过")
+		return nil
+	}
+
+	first := findFirstMasterNode(config)
+	for i := range masters {
+		node := masters[i]
+		if node.IP == first.IP {
+			continue
+		}
+
+		utils.PrintStage(fmt.Sprintf("正在加入主节点: %s", node.Host))
+		startTime := time.Now()
+
+		joinCommand, err := generateControlPlaneJoinCommand(first, &node, config)
+		if err != nil {
+			return err
+		}
+
+		output, err := utils.RunCommandOnNode(&node, joinCommand)
+		if err != nil {
+			return fmt.Errorf("主节点%s加入失败: %w\n输出: %s", node.Host, err, output)
+		}
+		if err := configureKubectl(&node); err != nil {
+			return err
+		}
+
+		utils.PrintSuccess("✓ 主节点%s加入成功，耗时: %v", node.Host, time.Since(startTime).Round(time.Second))
+	}
+
 	return nil
+}
+
+// generateControlPlaneJoinCommand 生成一条完整的控制面加入命令。
+//
+// 在第一台 master 上生成，给 target 用：apiserver 要广告自己的地址，
+// 不带 --apiserver-advertise-address 时 kubeadm 按默认路由挑一个网卡，
+// 多网卡的机器上挑中的往往不是集群内网那张。
+func generateControlPlaneJoinCommand(first, target *types.RemoteNode, config *types.ClusterConfig) (string, error) {
+	joinCommand, err := generateJoinCommand(first, config)
+	if err != nil {
+		return "", err
+	}
+
+	certKey, err := uploadControlPlaneCerts(first)
+	if err != nil {
+		return "", err
+	}
+
+	joinCommand += " --control-plane --certificate-key " + certKey
+	joinCommand += " --apiserver-advertise-address=" + target.IP
+	return joinCommand, nil
+}
+
+// uploadControlPlaneCerts 重新把控制面证书上传到集群，返回取回它们要用的 key。
+func uploadControlPlaneCerts(masterNode *types.RemoteNode) (string, error) {
+	const uploadCmd = "KUBECONFIG=/etc/kubernetes/admin.conf kubeadm init phase upload-certs --upload-certs"
+
+	output, err := utils.RunCommandOnNode(masterNode, uploadCmd)
+	if err != nil {
+		return "", fmt.Errorf("在主节点%s上上传控制面证书失败: %w\n输出: %s", masterNode.Host, err, output)
+	}
+
+	// kubeadm 把 key 单独打在一行里（前一行是 "Using certificate key:"）。
+	// 认"64 位十六进制"而不是认提示文案：提示文案跟着 kubeadm 的语言与版本变，
+	// 而 key 的形状是定的。
+	for _, line := range strings.Split(output, "\n") {
+		if key := strings.TrimSpace(line); isCertificateKey(key) {
+			return key, nil
+		}
+	}
+	return "", fmt.Errorf("kubeadm 没有输出可用的证书 key，输出为:\n%s", output)
+}
+
+// isCertificateKey 判断一行是不是 kubeadm 的控制面证书 key。
+func isCertificateKey(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // joinWorkerNodes 加入工作节点。

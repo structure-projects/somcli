@@ -1,13 +1,28 @@
-# 两个 systemd 节点（1 master + 1 worker），供 test/cluster 使用。
+# 三个 systemd 节点（2 master + 1 worker）加一台负载均衡，供 test/cluster 使用。
 #
 # 与 multinode 那套 sshd 容器的区别只有一个：这里的节点要真的能跑 kubelet，
 # 因此 systemd 是 PID 1、容器是 privileged、cgroup 用宿主命名空间。
+#
+# 第二台 master 与 lb 只有多 master 用例（SC-K04）会用到，其余用例照旧只碰
+# k8s-master 与 k8s-worker。空转的 systemd 容器只占几十兆内存，而为多 master
+# 单独起一套 fixture 的话，两套的节点准备逻辑必然漂移。
 #
 # 固定 IP 而非映射端口：somcli 的 SSH 调用写死 22 端口，节点必须各自有一个
 # 从宿主机可直连的地址。因此这套 fixture 只在 Linux 上可用（载体是 e2e.yml）。
 #
 # 起停由 test/cluster 的 TestMain 负责。
 services:
+  # 多 master 的稳定入口。真实部署里这是 VIP 或云上的 LB，这里用 haproxy 顶替 ——
+  # 要验的是"somcli 能把第二台 master 加进控制面"，不是 keepalived 怎么配。
+  k8s-lb:
+    image: haproxy:2.9-alpine
+    container_name: somcli-k8s-lb
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      somcli-k8s:
+        ipv4_address: 172.29.0.10
+
   k8s-master:
     build: .
     container_name: somcli-k8s-master
@@ -46,6 +61,23 @@ services:
     networks:
       somcli-k8s:
         ipv4_address: 172.29.0.12
+
+  k8s-master2:
+    build: .
+    container_name: somcli-k8s-master2
+    hostname: k8s-master2
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - ./.ssh:/tmp/somcli-key:ro
+      - /lib/modules:/lib/modules:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      somcli-k8s:
+        ipv4_address: 172.29.0.13
 
 networks:
   somcli-k8s:

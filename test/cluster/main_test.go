@@ -48,11 +48,15 @@ const (
 	bootWaitMax  = 180 * time.Second
 )
 
-// master / worker 的地址与 compose.yaml 一致。
+// 节点地址与 compose.yaml 一致。master2 与 lbEndpoint 只有多 master 用例用得到。
 var (
-	master = node{host: "k8s-master", ip: "172.29.0.11", role: "master"}
-	worker = node{host: "k8s-worker", ip: "172.29.0.12", role: "worker"}
+	master  = node{host: "k8s-master", ip: "172.29.0.11", role: "master"}
+	worker  = node{host: "k8s-worker", ip: "172.29.0.12", role: "worker"}
+	master2 = node{host: "k8s-master2", ip: "172.29.0.13", role: "master"}
 )
+
+// lbEndpoint 是 fixture 里那台 haproxy，充当多 master 的稳定 apiserver 入口。
+const lbEndpoint = "172.29.0.10:6443"
 
 type node struct {
 	host string
@@ -187,7 +191,7 @@ func compose(args ...string) (string, error) {
 // 却会被记在集群安装头上。
 func waitForNodes() error {
 	deadline := time.Now().Add(bootWaitMax)
-	for _, n := range []node{master, worker} {
+	for _, n := range []node{master, worker, master2} {
 		for {
 			if systemdReady(n) {
 				break
@@ -223,6 +227,13 @@ func systemdReady(n node) bool {
 // 直接喂给 somcli 即可（失败时用例会把路径与内容一并输出）。
 func clusterConfig(t *testing.T, name, version, runtime, cni string, nodes ...node) string {
 	t.Helper()
+	return clusterConfigWithEndpoint(t, name, version, runtime, cni, "", nodes...)
+}
+
+// clusterConfigWithEndpoint 同上，另外写一个 controlPlaneEndpoint。
+// 多 master 必须有它（没有的话 somcli 在连节点之前就拒绝，见 SC-K05）。
+func clusterConfigWithEndpoint(t *testing.T, name, version, runtime, cni, endpoint string, nodes ...node) string {
+	t.Helper()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "cluster:\n  - type: \"k8s\"\n    name: %q\n    nodes:\n", name)
@@ -238,6 +249,9 @@ func clusterConfig(t *testing.T, name, version, runtime, cni string, nodes ...no
 `, version, runtime)
 	if cni != "" {
 		fmt.Fprintf(&b, "      cni: %q\n", cni)
+	}
+	if endpoint != "" {
+		fmt.Fprintf(&b, "      controlPlaneEndpoint: %q\n", endpoint)
 	}
 
 	path := filepath.Join(t.TempDir(), "cluster.yaml")
@@ -362,7 +376,7 @@ func dumpNodeLogs() {
 	if logs, err := compose("logs", "--no-color", "--tail", "200"); err == nil {
 		fmt.Fprintf(os.Stderr, "=== 容器日志 ===\n%s\n", logs)
 	}
-	for _, n := range []node{master, worker} {
+	for _, n := range []node{master, worker, master2} {
 		for _, cmd := range []string{
 			"journalctl -u kubelet --no-pager -n 100",
 			"journalctl -u containerd --no-pager -n 50",
