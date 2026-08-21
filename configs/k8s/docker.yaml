@@ -7,7 +7,7 @@ resources:
   - name: "docker"
     version: "20.10.24"
     urls:
-      - "https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz"
+      - "https://download.docker.com/linux/static/stable/{{.UnameArch}}/docker-{{.Version}}.tgz"
     target: "{{.Name}}-{{.Version}}.tgz"
     extra_files:
       /etc/docker/daemon.json: |

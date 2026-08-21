@@ -8,7 +8,8 @@
 - [x] M2 已归档，`current-proposal` 已切到本提案
 - [x] 阅读 `proposal.md` 与技术附录 §4.3 / §4.5 / §5.2 Phase 3 / §6.7
 - [x] 切 `feat-platform-compat` 分支
-- [ ] 定论总纲待决事项 1（windows 产物）与 2（arm64 支持级别）
+- [x] 定论总纲待决事项 1（windows 产物）与 2（arm64 支持级别）
+  - 按总纲倾向：windows 产物在 M3.4 移除；arm64 引擎/工具编排完整支持，k8s 集群安装标注实验性
 
 ## M3.1 发行版抽象（F10）
 
@@ -21,10 +22,10 @@
 
 ## M3.2 架构参数化
 
-- [ ] 下载 URL 模板统一用 `{{.Arch}}`，配置侧同步修正
-- [ ] 解除 `pkg/cluster/kubernetes.go` 的非 amd64 拒绝
-- [ ] arm64 目标节点跑通工具编排（SC-P07）
-- [ ] k8s 集群安装的 arm64 支持级别按定论标注（完整/实验性）
+- [x] 下载 URL 模板统一用 `{{.Arch}}`，配置侧同步修正
+- [x] 解除 `pkg/cluster/kubernetes.go` 的非 amd64 拒绝
+- [ ] arm64 目标节点跑通工具编排（SC-P07，由 ci.yml 的 ubuntu-24.04-arm 承载，转绿前保持 pending）
+- [x] k8s 集群安装的 arm64 支持级别按定论标注（完整/实验性）
 
 ## M3.3 换源与离线（F12）
 

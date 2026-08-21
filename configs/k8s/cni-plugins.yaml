@@ -9,8 +9,8 @@ resources:
   - name: "cni-plugins"
     version: "1.5.1"
     urls:
-      - "https://github.com/containernetworking/plugins/releases/download/v{{.Version}}/cni-plugins-linux-amd64-v{{.Version}}.tgz"
+      - "https://github.com/containernetworking/plugins/releases/download/v{{.Version}}/cni-plugins-linux-{{.Arch}}-v{{.Version}}.tgz"
     target: "{{.Filename}}"
     post_install:
       - "mkdir -p /opt/cni/bin"
-      - "tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-amd64-v{{.Version}}.tgz"
+      - "tar Cxzvf /opt/cni/bin {{.CacheDir}}/{{.Filename}}"

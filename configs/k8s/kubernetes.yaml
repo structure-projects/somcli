@@ -3,9 +3,9 @@ resources:
   - name: "kubernetes"
     version: "1.28.2"
     urls:
-      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubeadm"
-      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubelet"
-      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubectl"
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/{{.Arch}}/kubeadm"
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/{{.Arch}}/kubelet"
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/{{.Arch}}/kubectl"
       - "https://structured.oss-cn-beijing.aliyuncs.com/somwork/service/kubelet.service"
     target: "{{.Filename}}"
     post_install:

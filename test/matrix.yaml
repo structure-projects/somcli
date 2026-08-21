@@ -668,10 +668,13 @@ scenarios:
     phase: 3
     status: pending
 
+  # 由 ci.yml 的 ubuntu-24.04-arm 一格承载：在 arm64 操作机上跑完整 local 组，
+  # 等于在 arm64 本机目标上验证了引擎与工具编排（下载/二进制/包/容器等 method）。
+  # k8s 集群安装在 arm64 上标注为实验性，不把 nightly e2e 转绿作为本条判据。
   - id: SC-P07
-    desc: 目标架构 arm64
+    desc: 目标架构 arm64（引擎与工具编排）
     env: [matrix]
-    files: [.github/workflows/e2e.yml]
+    files: [.github/workflows/ci.yml]
     defects: []
     phase: 3
     status: pending

@@ -9,7 +9,7 @@ resources:
     version: "24.0.6"
     method: "binary"
     urls:
-      - "https://download.docker.com/linux/static/stable/x86_64/docker-24.0.6.tgz"
+      - "https://download.docker.com/linux/static/stable/{{.UnameArch}}/docker-24.0.6.tgz"
     target: "{{.Name}}-{{.Version}}.tgz"
     checksum: 99792dec613df93169a118b05312a722a63604b868e4c941b1b436abcf3bb70f
     post_install:

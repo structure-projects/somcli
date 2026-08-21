@@ -6,7 +6,7 @@ resources:
   - name: "containerd"
     version: "1.7.22"
     urls:
-      - "https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-amd64.tar.gz"
+      - "https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-{{.Arch}}.tar.gz"
     target: "{{.Filename}}"
     extra_files:
       /etc/systemd/system/containerd.service: |
@@ -30,7 +30,7 @@ resources:
         [Install]
         WantedBy=multi-user.target
     post_install:
-      - "tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz"
+      - "tar Cxzvf /usr/local {{.CacheDir}}/{{.Filename}}"
       - "mkdir -p /etc/containerd"
       - "containerd config default | tee /etc/containerd/config.toml >/dev/null"
       # 镜像仓库相关的两条 sed 只在真的配了仓库时才能跑：无条件跑的话生成的是

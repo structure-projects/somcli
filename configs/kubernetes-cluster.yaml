@@ -41,18 +41,18 @@ resources:
   - name: "containerd"
     version: "1.7.0"
     urls:
-      - "https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-amd64.tar.gz"
-      - "https://github.com/opencontainers/runc/releases/download/v1.1.9/runc.amd64"
-      - "https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-amd64-v1.2.0.tgz"
+      - "https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-{{.Arch}}.tar.gz"
+      - "https://github.com/opencontainers/runc/releases/download/v1.1.9/runc.{{.Arch}}"
+      - "https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-{{.Arch}}-v1.2.0.tgz"
     target: "{{.Filename}}"
     hosts:
       - "k8s-master-01"
       - "k8s-worker-01"
     post_install:
-      - "tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz"
-      - "install -m 755 {{.CacheDir}}/runc.amd64 /usr/local/sbin/runc"
+      - "tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-{{.Arch}}.tar.gz"
+      - "install -m 755 {{.CacheDir}}/runc.{{.Arch}} /usr/local/sbin/runc"
       - "mkdir -p /opt/cni/bin"
-      - "tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-amd64-v1.2.0.tgz"
+      - "tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-{{.Arch}}-v1.2.0.tgz"
       - "install -m 644 /usr/local/lib/systemd/system/containerd.service /etc/systemd/system/containerd.service"
       - "mkdir -p /etc/containerd"
       - "containerd config default > /etc/containerd/config.toml"
@@ -64,9 +64,9 @@ resources:
   - name: "kubernetes"
     version: "1.28.2"
     urls:
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubeadm"
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubelet"
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubectl"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubeadm"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubelet"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubectl"
       - "https://structured.oss-cn-beijing.aliyuncs.com/somwork/service/kubelet.service"
     target: "{{.Filename}}"
     hosts:

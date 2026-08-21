@@ -3,7 +3,7 @@ resources:
   - name: "runc"
     version: "1.1.14"
     urls:
-      - "https://github.com/opencontainers/runc/releases/download/v{{.Version}}/runc.amd64"
+      - "https://github.com/opencontainers/runc/releases/download/v{{.Version}}/runc.{{.Arch}}"
     target: "{{.Filename}}"
     post_install:
-      - "install -m 755 {{.CacheDir}}/runc.amd64 /usr/local/sbin/runc"
+      - "install -m 755 {{.CacheDir}}/{{.Filename}} /usr/local/sbin/runc"

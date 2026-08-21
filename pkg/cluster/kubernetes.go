@@ -409,8 +409,14 @@ func checkAndConfigureOS(node *types.RemoteNode) error {
 	if err != nil {
 		return fmt.Errorf("检查CPU架构失败: %w", err)
 	}
-	if !strings.Contains(strings.ToLower(arch), "x86_64") && !strings.Contains(strings.ToLower(arch), "amd64") {
-		return fmt.Errorf("不支持的CPU架构: %s，仅支持x86_64/amd64", arch)
+	// k8s 官方为 amd64 与 arm64 都发布二进制（configs/k8s 里的 URL 已用 {{.Arch}}
+	// 参数化），所以两档都放行。别的架构（386 / armv7 / ppc64le）上游不全，
+	// 提前拒绝，别等下载 404 或二进制跑不起来才报一个指不到根因的错。
+	// 用精确匹配而不是 Contains：Contains 会把 "x86_64 haswell" 这类异常输出也放过。
+	switch strings.ToLower(strings.TrimSpace(arch)) {
+	case "x86_64", "amd64", "aarch64", "arm64":
+	default:
+		return fmt.Errorf("不支持的CPU架构: %s，仅支持 x86_64/amd64 与 aarch64/arm64（k8s 集群安装在 arm64 上为实验性支持）", arch)
 	}
 	utils.PrintInfo("CPU架构: %s", strings.TrimSpace(arch))
 

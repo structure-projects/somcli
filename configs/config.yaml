@@ -27,7 +27,7 @@ resources:
     version: "24.0.6"
     method: "binary"
     urls:
-      - "https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz"
+      - "https://download.docker.com/linux/static/stable/{{.UnameArch}}/docker-{{.Version}}.tgz"
     target: "{{.Name}}-{{.Version}}.tgz"
     post_install:
       - "echo 执行安装脚本-携带参数"
@@ -36,13 +36,13 @@ resources:
     version: "2.24.0"
     method: "binary"
     urls:
-      - "https://github.com/docker/compose/releases/download/v{{.Version}}/docker-compose-linux-x86_64"
+      - "https://github.com/docker/compose/releases/download/v{{.Version}}/docker-compose-linux-{{.UnameArch}}"
     target: "{{.Name}}"
   - name: "cri-dockerd"
     version: "0.3.17"
     method: "binary"
     urls:
-      - "https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.amd64.tgz"
+      - "https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.{{.Arch}}.tgz"
       - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service"
       - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket"
     target: "{{.Filename}}"
@@ -50,12 +50,12 @@ resources:
     version: "0.3.9"
     method: "binary"
     urls:
-      - "https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.amd64.tgz"
+      - "https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.{{.Arch}}.tgz"
       - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service"
       - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket"
     target: "{{.Filename}}"
     post_install:
-      - "tar -xvf {{.CacheDir}}/cri-dockerd-{{.Version}}.amd64.tgz"
+      - "tar -xvf {{.CacheDir}}/cri-dockerd-{{.Version}}.{{.Arch}}.tgz"
       - "sudo mv {{.CacheDir}}/cri-dockerd/cri-dockerd /usr/local/bin/"
       - "sudo mkdir -p /etc/systemd/system"
       - "sudo cp {{.CacheDir}}/cri-docker.service /etc/systemd/system/"
@@ -68,9 +68,9 @@ resources:
     version: "1.28.2"
     method: "binary"
     urls:
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubeadm"
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubectl"
-      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/amd64/kubelet"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubeadm"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubectl"
+      - "https://storage.googleapis.com/kubernetes-release/release/v{{.Version}}/bin/linux/{{.Arch}}/kubelet"
       - "https://structured.oss-cn-beijing.aliyuncs.com/somwork/service/kubelet.service"
       - "https://structured.oss-cn-beijing.aliyuncs.com/somwork/scripts/init-kubernetes.sh"
     target: "{{.Filename}}"
@@ -86,10 +86,10 @@ resources:
   - name: "crictl"
     version: "1.28.0"
     urls:
-      - "https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{.Version}}/crictl-v{{.Version}}-linux-amd64.tar.gz"
+      - "https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{.Version}}/crictl-v{{.Version}}-linux-{{.Arch}}.tar.gz"
     target: "{{.Filename}}"
     post_install:
-      - "sudo tar zxvf {{.CacheDir}}/crictl-v{{.Version}}-linux-amd64.tar.gz -C /usr/local/bin"
+      - "sudo tar zxvf {{.CacheDir}}/crictl-v{{.Version}}-linux-{{.Arch}}.tar.gz -C /usr/local/bin"
       - "sudo chmod +x /usr/local/bin/crictl"
   # - name: "k8s-images"
   #   version: "1.28.2"
