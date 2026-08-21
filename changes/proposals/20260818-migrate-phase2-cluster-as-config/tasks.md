@@ -98,9 +98,11 @@
 
 ## 评审
 
-- [ ] 通过 expert-review（产出 `review.md`）
-- [ ] 修复所有 MUST fix 项
-- [ ] SHOULD fix 项已评估
+- [x] 通过 expert-review（产出 `review.md`）
+      —— 结论：有条件通过；无 MUST fix，两条 SHOULD（remove 补默认值、join 去前导空格）已在评审中修掉，
+      另两条 SHOULD（摘控制面不检查法定人数、swarm remove 顺序）记为已知限制留后续
+- [x] 修复所有 MUST fix 项（评审无 MUST fix）
+- [x] SHOULD fix 项已评估
 
 ## 归档
 
