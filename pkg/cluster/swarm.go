@@ -170,11 +170,8 @@ func findManagerNode(config *types.ClusterConfig) *types.RemoteNode {
 func initSwarm(node *types.RemoteNode, config *types.ClusterConfig) error {
 	utils.PrintInfo("Initializing Swarm on manager node %s...", node.Host)
 
-	initCmd := fmt.Sprintf(
-		"docker swarm init --advertise-addr %s --listen-addr %s",
-		config.Cluster.SwarmConfig.AdvertiseAddr,
-		config.Cluster.SwarmConfig.ListenAddr,
-	)
+	initCmd := "docker swarm init" + swarmInitFlags(config.Cluster.SwarmConfig)
+	utils.PrintInfo("  %s", initCmd)
 
 	output, err := utils.RunCommandOnNode(node, initCmd)
 	if err != nil {
@@ -197,6 +194,40 @@ func initSwarm(node *types.RemoteNode, config *types.ClusterConfig) error {
 
 	utils.PrintSuccess("Swarm initialized successfully")
 	return nil
+}
+
+// swarmInitFlags 把 swarmConfig 翻成 docker swarm init 的标志。
+//
+// 每一项都判空：原先 --advertise-addr 与 --listen-addr 是无条件拼上去的，
+// 配置里不写就成了 "docker swarm init --advertise-addr  --listen-addr "，
+// docker 报的是标志缺参数，看不出是配置少了两个键。
+//
+// defaultAddrPool / subnetSize / dataPathPort 这三个键此前在类型里有、却从没人读，
+// 配了完全没有效果 —— 而这三件事装完就改不了了（要改得拆了 swarm 重建）。
+func swarmInitFlags(cfg types.SwarmConfig) string {
+	var flags strings.Builder
+
+	if addr := strings.TrimSpace(cfg.AdvertiseAddr); addr != "" {
+		flags.WriteString(" --advertise-addr " + addr)
+	}
+	if addr := strings.TrimSpace(cfg.ListenAddr); addr != "" {
+		flags.WriteString(" --listen-addr " + addr)
+	}
+	// overlay 网络的地址池。可以给多个，docker 的标志本身就是可重复的。
+	for _, pool := range cfg.DefaultAddrPool {
+		if pool = strings.TrimSpace(pool); pool != "" {
+			flags.WriteString(" --default-addr-pool " + pool)
+		}
+	}
+	// 只在给了地址池时才有意义：单独给掩码长度，docker 直接报错。
+	if cfg.SubnetSize > 0 && len(cfg.DefaultAddrPool) > 0 {
+		flags.WriteString(fmt.Sprintf(" --default-addr-pool-mask-length %d", cfg.SubnetSize))
+	}
+	if cfg.DataPathPort > 0 {
+		flags.WriteString(fmt.Sprintf(" --data-path-port %d", cfg.DataPathPort))
+	}
+
+	return flags.String()
 }
 
 func joinSwarmNodes(config *types.ClusterConfig, masterNode *types.RemoteNode) error {

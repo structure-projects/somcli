@@ -49,6 +49,31 @@ jobs:
       - name: yamllint configs
         run: pipx install yamllint && yamllint -d relaxed configs/
 
+      # configs/k8s 里的清单渲染时开着 missingkey=error：用了一个 cluster create
+      # 不注入的 {{.Vars.xxx}}，整条命令会在节点上报 "map has no entry for key"，
+      # 而那要等每晚的 e2e 才看得到。这里当场把两边对上。
+      # 只查 *.yaml：同目录的 README 也写着这些变量名，那是文档不是模板。
+      - name: configs/k8s 用到的模板变量必须有人注入
+        run: |
+          missing=0
+          for var in $(grep -rho '{{\.Vars\.[A-Za-z0-9_]*}}' configs/k8s/*.yaml \
+              | sed 's/{{\.Vars\.//; s/}}//' | sort -u); do
+            if ! grep -q "\"$var\":" pkg/cluster/catalog.go; then
+              echo "configs/k8s 用了 {{.Vars.$var}}，但 setK8sTemplateVars 没有注入它"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      # 集群编排只负责编排：装什么下沉到 configs/k8s/*.yaml 之后，
+      # pkg/cluster 里不该再出现资源定义。留一条就是留一处改了配置不生效的地方。
+      - name: pkg/cluster 内不得有 Resource 字面量
+        run: |
+          if grep -rn 'types\.Resource{' pkg/cluster/*.go; then
+            echo "pkg/cluster 里出现了资源定义：安装内容应写在 configs/k8s/*.yaml"
+            exit 1
+          fi
+
       # 功能验证一律黑盒：test/ 下只允许用 os/exec 跑编译出来的二进制。
       # 一旦有用例 import 本仓库的包，断言的就是内部实现而不是工具行为。
       # 匹配带前引号的形式 —— import 路径一定带引号，注释里提到包名不算违规。

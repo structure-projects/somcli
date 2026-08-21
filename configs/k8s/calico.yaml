@@ -1,0 +1,19 @@
+# calico 网络插件。
+#
+# 走 method: manifest（kubectl apply），只在 master 上执行。
+resources:
+  - name: "calico"
+    version: "3.28.2"
+    method: "manifest"
+    urls:
+      - "https://raw.githubusercontent.com/projectcalico/calico/v{{.Version}}/manifests/calico.yaml"
+    target: "{{.Filename}}"
+    pre_install:
+      # 清单里 CALICO_IPV4POOL_CIDR 是注释掉的，不显式设的话 calico 用自己的默认
+      # 192.168.0.0/16 —— 与 kubeadm 的 --pod-network-cidr 对不上。
+      # 去掉注释后缩进正好与同级列表项对齐（官方文档就是这么改的）。
+      - "sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' {{.CacheDir}}/calico.yaml"
+      - "sed -i 's|#   value: \"192.168.0.0/16\"|  value: \"{{.Vars.podNetworkCidr}}\"|' {{.CacheDir}}/calico.yaml"
+      # 两条 sed 都要验：匹配不上时 sed 照样退 0，改没改成只能自己查。
+      - "grep -q '^ *- name: CALICO_IPV4POOL_CIDR' {{.CacheDir}}/calico.yaml"
+      - "grep -q '^ *value: \"{{.Vars.podNetworkCidr}}\"' {{.CacheDir}}/calico.yaml"

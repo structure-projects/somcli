@@ -493,6 +493,22 @@ scenarios:
     phase: 2
     status: done
 
+  - id: SC-K16
+    desc: k8sConfig.resources 指定装什么，留空按默认组合
+    env: [local]
+    files: [test/local/cluster_catalog_test.go]
+    defects: []
+    phase: 2
+    status: done
+
+  - id: SC-K17
+    desc: SOMCLI_K8S_CATALOG 取代内置安装清单
+    env: [local]
+    files: [test/local/cluster_catalog_test.go]
+    defects: []
+    phase: 2
+    status: done
+
   # ---------- SC-S Swarm ----------
   - id: SC-S01
     desc: 初始化 manager

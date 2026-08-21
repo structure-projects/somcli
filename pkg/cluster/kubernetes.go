@@ -27,59 +27,15 @@ import (
 	"github.com/structure-projects/somcli/pkg/utils"
 )
 
-const (
-	containerdServiceTemplate = `[Unit]
-Description=containerd container runtime
-Documentation=https://containerd.io
-After=network.target local-fs.target
-
-[Service]
-ExecStartPre=-/sbin/modprobe overlay
-ExecStart=/usr/local/bin/containerd
-Restart=always
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOFILE=1048576
-LimitNPROC=infinity
-LimitCORE=infinity
-
-[Install]
-WantedBy=multi-user.target`
-
-	// basePackagesCmd 在节点上装 kubeadm preflight 要求的那几个包。
-	//
-	// 包管理器的判断写在**生成的 shell 里**而不是 Go 侧：装包发生在目标节点上，
-	// 拿操作机的发行版去挑包管理器，一到远程就是错的（与 --sudo 同一个道理）。
-	// 原先这里写死 yum install -y ...，在 debian/ubuntu 节点上第一步就失败，
-	// 集群安装根本走不到后面。
-	//
-	// 这只是让 k8s 安装能在非 yum 发行版上跑起来的最小处理，完整的发行版抽象仍属 M3。
-	basePackagesCmd = `if command -v apt-get >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y socat conntrack ebtables ipset
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y --allowerasing socat conntrack-tools ebtables ipset
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y socat conntrack ebtables ipset
-elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache socat conntrack-tools ebtables ipset
-elif command -v zypper >/dev/null 2>&1; then
-  zypper --non-interactive install socat conntrack-tools ebtables ipset
-else
-  echo "认不出节点上的包管理器，请先手工安装 socat conntrack ebtables ipset" >&2
-  exit 1
-fi`
-)
-
 // 组件的默认版本。
 //
 // 必须有默认值：配置里不写 containerdVersion 时，URL 会拼成
 // .../download/v/containerd--linux-amd64.tar.gz —— 下载 404，而报错只说"下载失败"，
 // 用户根本看不出是自己少写了一个键。
-// 这些值都对着 k8s 1.28 那一代；M2.3 把安装内容外置到 configs/k8s/*.yaml 之后，
-// 版本会跟着搬到配置里，这里只留兜底。
+//
+// 与 configs/k8s/*.yaml 里的 version: 是同一批值，两处都留着是因为职责不同：
+// 清单文件的 version 让它能被 somcli install -f 单独喂进去，这里的默认值负责
+// 在集群配置缺键时把日志打清楚（"xxx 未配置，使用默认值"）。
 const (
 	defaultContainerdVersion = "1.7.22"
 	defaultRuncVersion       = "1.1.14"
@@ -142,6 +98,9 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	utils.PrintInfo("开始时间: %s", startTime.Format("2006-01-02 15:04:05"))
 	utils.PrintInfo("集群配置详情:")
 	applyK8sDefaults(config)
+	// 补完默认值再交给模板：configs/k8s 里的清单要拿这些值渲染，
+	// 顺序颠倒的话 cni 之类的键会以空串下去。
+	setK8sTemplateVars(config)
 	utils.PrintInfo("  集群名称: %s", config.Cluster.Name)
 	utils.PrintInfo("  Kubernetes版本: %s", config.Cluster.K8sConfig.Version)
 	utils.PrintInfo("  Pod网络CIDR: %s", config.Cluster.K8sConfig.PodNetworkCidr)
@@ -160,7 +119,7 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	utils.PrintSuccess("✓ 集群准备完成")
 
 	// 2. 依赖安装阶段
-	if err := installDependencies(config); err != nil {
+	if err := installDependencies(config, force); err != nil {
 		utils.PrintError("依赖安装失败: %v", err)
 		return fmt.Errorf("依赖安装失败: %w", err)
 	}
@@ -215,217 +174,41 @@ func CreateK8sCluster(config *types.ClusterConfig, force bool, skipPrecheck bool
 	return nil
 }
 
-// installDependencies
-func installDependencies(config *types.ClusterConfig) error {
+// installDependencies 按 k8sConfig.resources 逐个装。
+//
+// 装什么全在 configs/k8s/*.yaml 里，这里只做编排：定顺序、定节点、定版本，
+// 剩下的下载、分发、幂等、失败传播都交给通用引擎。
+// 外置之前这些内容是本文件里的 Go 字面量 —— 换个版本、加一条 sed 都要改代码重编译，
+// 而"这套集群到底装了什么"只能靠读 Go 代码回答。
+//
+// force 来自 cluster create --force，含义与 install --force 一致：不看幂等状态重装一遍。
+// 这个标志此前一路传进来却没有任何消费点，加了与不加完全一样。
+func installDependencies(config *types.ClusterConfig, force bool) error {
 	utils.PrintInfo("正在准备安装Kubernetes %s...", config.Cluster.K8sConfig.Version)
 
-	// 获取所有节点IP
-	hosts := getAllNodesIP(config)
-
-	// 1. 安装基础依赖
-	if err := installBaseDependencies(config, hosts); err != nil {
+	catalog, err := loadK8sCatalog()
+	if err != nil {
 		return err
 	}
 
-	// 2. 安装容器运行时
-	runtime := config.Cluster.K8sConfig.ContainerRuntime
-	if runtime == "" {
-		runtime = "containerd" // 默认使用containerd
-	}
+	hosts := getAllNodesIP(config)
+	names := k8sResourceNames(config)
+	utils.PrintInfo("待安装资源: %s", strings.Join(names, " -> "))
 
-	switch runtime {
-	case "docker":
-		if err := installDocker(config, hosts); err != nil {
+	engine := installer.NewInstaller()
+	for _, name := range names {
+		res, err := resourceFromCatalog(catalog, name, k8sVersionFor(name, config.Cluster.K8sConfig), hosts)
+		if err != nil {
 			return err
 		}
 
-	case "containerd":
-		if err := installContainerd(config, hosts); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("不支持的容器运行时: %s", runtime)
-	}
-
-	// 3. 安装Kubernetes组件
-	return installK8sComponents(config, hosts)
-}
-
-// installDocker 安装Docker
-func installDocker(config *types.ClusterConfig, hosts []string) error {
-	utils.PrintInfo("正在安装Docker...")
-
-	dockerVersion := config.Cluster.K8sConfig.DockerVersion
-
-	// 定义Docker资源
-	//
-	// 本文件里所有资源的 method 都是 script：解压、install、chmod、systemctl 全写在
-	// post_install 里，method 字段过去零消费，写 "binary"/"package" 只是自我描述。
-	// 分发实现之后再挂着那两个值就会与脚本撞车（binary 再装一遍、package 去装一个叫
-	// base-dependencies 的包）。这是 method 分发落地时的最小适配，
-	// 真正改造成 method: binary / package 由 M2 集群编排一起做。
-	dockerResource := types.Resource{
-		Name:    "docker",
-		Version: dockerVersion,
-		Method:  "script",
-		URLs: []string{
-			"https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz",
-		},
-		PostInstall: []string{
-			" tar xzvf {{.CacheDir}}/{{.Name}}-{{.Version}}.tgz -C /usr/local/bin",
-			" chmod +x /usr/local/bin/docker*",
-			" groupadd docker || true",
-			" usermod -aG docker $USER",
-			" mkdir -p /etc/docker",
-			" systemctl enable docker",
-			" systemctl start docker",
-		},
-		ExtraFiles: map[string]string{
-			"/etc/docker/daemon.json": `{
-                "exec-opts": ["native.cgroupdriver=systemd"],
-                "log-driver": "json-file",
-                "log-opts": {"max-size": "100m"},
-                "storage-driver": "overlay2"
-            }`,
-		},
-		Hosts:  hosts,
-		Target: "{{.Name}}-{{.Version}}.tgz",
-	}
-
-	installer := installer.NewInstaller()
-
-	return installer.Install(dockerResource, true)
-}
-
-// installContainerd 安装Containerd
-func installContainerd(config *types.ClusterConfig, hosts []string) error {
-	utils.PrintInfo("正在安装Containerd...")
-
-	installer := installer.NewInstaller()
-
-	// 定义 CNI 插件资源（/opt/cni/bin 下那批二进制，不是网络方案本身）。
-	//
-	// 名字原先也叫 "containerd"，和下面真正的 containerd 资源同名 —— 幂等状态是按
-	// 名字+版本记的，两条资源共用一个名字，先装的那条会被后装的覆盖掉，
-	// 于是"这台机器装过 cni-plugins 没有"永远查不到正确答案。
-	cniResource := types.Resource{
-		Name:    "cni-plugins",
-		Version: config.Cluster.K8sConfig.CniPluginsVersion,
-		Method:  "script",
-		URLs: []string{
-			"https://github.com/containernetworking/plugins/releases/download/v{{.Version}}/cni-plugins-linux-amd64-v{{.Version}}.tgz",
-		},
-		PostInstall: []string{
-			" mkdir -p /opt/cni/bin",
-			" tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-amd64-v{{.Version}}.tgz",
-		},
-		Hosts:  hosts,
-		Target: "{{.Filename}}",
-	}
-	if err := installer.Install(cniResource, false); err != nil {
-		return fmt.Errorf("安装 CNI 插件失败: %w", err)
-	}
-
-	// 定义Containerd资源
-	runcResource := types.Resource{
-		Name:    "runc",
-		Version: config.Cluster.K8sConfig.RuncVersion,
-		Method:  "script",
-		URLs: []string{
-			"https://github.com/opencontainers/runc/releases/download/v{{.Version}}/runc.amd64",
-		},
-		PostInstall: []string{
-			" install -m 755 {{.CacheDir}}/runc.amd64 /usr/local/sbin/runc",
-		},
-		Hosts:  hosts,
-		Target: "{{.Filename}}",
-	}
-
-	if err := installer.Install(runcResource, false); err != nil {
-		return fmt.Errorf("安装 runc 失败: %w", err)
-	}
-
-	// 定义Containerd资源
-	//
-	// post_install 分步拼而不是写成一整块字面量：镜像仓库相关的两条 sed 只有在
-	// imageRepository 真的配了的时候才能加。此前是无条件拼进去的，配置里不写仓库时
-	// 生成的是 sed 's|k8s.gcr.io||g' 和 sandbox_image = "/pause:" ——
-	// 配置被改坏，containerd 拉不到 pause 镜像，而报错指向的是"沙箱镜像拉取失败"。
-	containerdCmds := []string{
-		"tar Cxzvf /usr/local {{.CacheDir}}/containerd-{{.Version}}-linux-amd64.tar.gz",
-		"mkdir -p /etc/containerd",
-		"containerd config default |  tee /etc/containerd/config.toml >/dev/null",
-	}
-	if repo := strings.TrimSpace(config.Cluster.K8sConfig.ImageRepository); repo != "" {
-		containerdCmds = append(containerdCmds,
-			fmt.Sprintf("sed -i 's|k8s.gcr.io|%s|g' /etc/containerd/config.toml", repo))
-		if pause := strings.TrimSpace(config.Cluster.K8sConfig.PauseImageVersion); pause != "" {
-			containerdCmds = append(containerdCmds,
-				fmt.Sprintf(" sed -i 's|sandbox_image = \".*\"|sandbox_image = \"%s/pause:%s\"|g' /etc/containerd/config.toml",
-					repo, pause))
+		utils.PrintInfo("正在安装 %s %s...", res.Name, res.Version)
+		if err := engine.Install(res, force || alwaysApply[name]); err != nil {
+			return fmt.Errorf("安装 %s 失败: %w", name, err)
 		}
 	}
-	containerdCmds = append(containerdCmds,
-		// F7：kubeadm 默认用 systemd 驱动，containerd 默认配置里是 cgroupfs。
-		// 两边不一致的表现是 kubelet 反复重启，而报错完全指不到根因上。
-		"sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml",
-		// 改完必须验：containerd 换过配置格式（v2/v3 的键位置不同），
-		// sed 没匹配上时它照样退 0，那就成了"改过了"的假象。
-		"grep -q 'SystemdCgroup = true' /etc/containerd/config.toml",
-		"systemctl daemon-reload",
-		"systemctl enable --now containerd",
-	)
 
-	containerdResource := types.Resource{
-		Name:    "containerd",
-		Version: config.Cluster.K8sConfig.ContainerdVersion,
-		Method:  "script",
-		URLs: []string{
-			"https://github.com/containerd/containerd/releases/download/v{{.Version}}/containerd-{{.Version}}-linux-amd64.tar.gz",
-		},
-		PostInstall: containerdCmds,
-		ExtraFiles: map[string]string{
-			"/etc/systemd/system/containerd.service": containerdServiceTemplate,
-		},
-		Hosts:  hosts,
-		Target: "{{.Filename}}",
-	}
-
-	return installer.Install(containerdResource, false)
-}
-
-// installK8sComponents 安装Kubernetes组件
-func installK8sComponents(config *types.ClusterConfig, hosts []string) error {
-	utils.PrintInfo("正在安装Kubernetes组件...")
-
-	k8sVersion := config.Cluster.K8sConfig.Version
-
-	// 定义Kubernetes组件资源
-	k8sResource := types.Resource{
-		Name:    "kubernetes",
-		Version: k8sVersion,
-		Method:  "script",
-		URLs: []string{
-			"https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubeadm",
-			"https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubelet",
-			"https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubectl",
-			"https://structured.oss-cn-beijing.aliyuncs.com/somwork/service/kubelet.service",
-		},
-		PostInstall: []string{
-			" install -o root -g root -m 0755 {{.CacheDir}}/kubeadm /usr/local/bin/kubeadm",
-			" install -o root -g root -m 0755 {{.CacheDir}}/kubelet /usr/local/bin/kubelet",
-			" install -o root -g root -m 0755 {{.CacheDir}}/kubectl /usr/local/bin/kubectl",
-			" mkdir -p /etc/systemd/system/kubelet.service.d",
-			" install -o root -g root -m 0644 {{.CacheDir}}/kubelet.service /etc/systemd/system/kubelet.service",
-			" systemctl daemon-reload",
-			" systemctl enable --now kubelet",
-		},
-		Hosts:  hosts,
-		Target: "{{.Filename}}",
-	}
-
-	installer := installer.NewInstaller()
-	return installer.Install(k8sResource, false)
+	return nil
 }
 
 // initK8sMaster 初始化 Kubernetes 主节点
@@ -548,44 +331,6 @@ func getAllNodesIP(config *types.ClusterConfig) []string {
 		hosts = append(hosts, node.IP)
 	}
 	return hosts
-}
-
-// installBaseDependencies 安装基础依赖，并把 kubeadm preflight 要求的内核前置落到节点上。
-func installBaseDependencies(config *types.ClusterConfig, hosts []string) error {
-	utils.PrintInfo("正在安装基础依赖...")
-
-	commands := []string{
-		basePackagesCmd,
-		" swapoff -a",
-		" sed -i '/ swap / s/^/#/' /etc/fstab",
-		" modprobe overlay",
-		" modprobe br_netfilter",
-		" sysctl --system",
-		// F8：写了文件、跑了 sysctl --system，不等于参数真的生效（模块没加载时这两个
-		// 键根本不存在，sysctl --system 只会打一行警告然后退 0）。当场验一遍，
-		// 让它在这里失败，而不是等 kubeadm preflight 报一个指不到根因的错。
-		` test "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1`,
-		` test "$(sysctl -n net.ipv4.ip_forward)" = 1`,
-	}
-
-	baseDeps := types.Resource{
-		Name:    "base-dependencies",
-		Version: "",
-		Method:  "script",
-		// F8：这两个文件此前从来没人写，于是上面的 sysctl --system 无事可做，
-		// 而 modprobe 的效果重启就没了。
-		ExtraFiles: map[string]string{
-			"/etc/modules-load.d/k8s.conf": "overlay\nbr_netfilter\n",
-			"/etc/sysctl.d/k8s.conf": "net.bridge.bridge-nf-call-iptables  = 1\n" +
-				"net.bridge.bridge-nf-call-ip6tables = 1\n" +
-				"net.ipv4.ip_forward                 = 1\n",
-		},
-		PostInstall: commands,
-		Hosts:       hosts,
-	}
-
-	installer := installer.NewInstaller()
-	return installer.Install(baseDeps, true)
 }
 
 // prepareK8sCluster 准备Kubernetes集群
@@ -774,6 +519,13 @@ func validateK8sClusterConfig(config *types.ClusterConfig) error {
 			config.Cluster.K8sConfig.Cni, cniFlannel, cniCalico)
 	}
 
+	// 引用的资源名必须在清单里找得到，而且这件事要在连节点之前问清楚：
+	// 名字写错时若等到装的时候才报，前面几样已经装到节点上了，而报错只说"没有资源 xxx"，
+	// 看不出是自己拼错了一个名字。
+	if err := validateK8sResourceNames(config); err != nil {
+		return err
+	}
+
 	// dockershim 在 k8s 1.24 从 kubelet 移除，而这里走的是 --cri-socket dockershim.sock
 	// （见 initK8sMaster）—— 1.24 以上必然连不上 CRI。不拒绝的话，失败会发生在装完 docker、
 	// 装完 kubeadm、跑到 kubeadm init 的时候：节点已经被改过一遍了。
@@ -824,62 +576,32 @@ func parseK8sMinor(version string) (int, int, bool) {
 // deployCNI 在 master 上部署网络插件（D5）。
 //
 // 之前完全没有这一步：kubeadm init 完节点是 NotReady，装完 somcli 报"创建成功"，
-// 用户拿到的是一个跑不了 Pod 的集群。calico / flannel 在整个 Go 代码里零命中。
+// 用户拿到的是一个跑不了 Pod 的集群。
 //
 // 走 method: manifest（一条资源，kubectl apply），而不是在这里直接拼 kubectl 命令：
 // 清单的下载、分发、幂等、失败传播都是引擎已经有的能力，重写一遍就是又一处没人走的分支。
+// 清单内容与 CIDR 替换写在 configs/k8s/{flannel,calico}.yaml 里。
 func deployCNI(masterNode *types.RemoteNode, config *types.ClusterConfig) error {
 	k8s := config.Cluster.K8sConfig
 	cni := strings.ToLower(strings.TrimSpace(k8s.Cni))
-	podCidr := strings.TrimSpace(k8s.PodNetworkCidr)
 
-	utils.PrintInfo("正在部署网络插件 %s %s（Pod 网段 %s）...", cni, k8s.CniVersion, podCidr)
+	utils.PrintInfo("正在部署网络插件 %s %s（Pod 网段 %s）...", cni, k8s.CniVersion, k8s.PodNetworkCidr)
 
-	var res types.Resource
-	switch cni {
-	case cniFlannel:
-		res = types.Resource{
-			Name:    "flannel",
-			Version: k8s.CniVersion,
-			Method:  "manifest",
-			URLs: []string{
-				"https://github.com/flannel-io/flannel/releases/download/v{{.Version}}/kube-flannel.yml",
-			},
-			Target: "{{.Filename}}",
-			PreInstall: []string{
-				// 清单里写死 10.244.0.0/16。与 kubeadm --pod-network-cidr 不一致时，
-				// Pod 拿到的地址不在集群网段里，表现是跨节点不通而不是"配错了"。
-				fmt.Sprintf("sed -i 's|10.244.0.0/16|%s|g' {{.CacheDir}}/kube-flannel.yml", podCidr),
-				// 改完必须验：清单换过键名/格式时 sed 匹配不上也退 0，
-				// 那就成了"改过了"的假象，而错要到跨节点通信时才暴露。
-				fmt.Sprintf("grep -q '%s' {{.CacheDir}}/kube-flannel.yml", podCidr),
-			},
-			Hosts: []string{masterNode.IP},
-		}
-	case cniCalico:
-		res = types.Resource{
-			Name:    "calico",
-			Version: k8s.CniVersion,
-			Method:  "manifest",
-			URLs: []string{
-				"https://raw.githubusercontent.com/projectcalico/calico/v{{.Version}}/manifests/calico.yaml",
-			},
-			Target: "{{.Filename}}",
-			PreInstall: []string{
-				// calico 清单里 CALICO_IPV4POOL_CIDR 是注释掉的，不显式设的话它用自己的
-				// 默认 192.168.0.0/16 —— 与 kubeadm 的 --pod-network-cidr 对不上。
-				// 去掉注释后缩进正好与同级列表项对齐（官方文档就是这么改的）。
-				"sed -i 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' {{.CacheDir}}/calico.yaml",
-				fmt.Sprintf("sed -i 's|#   value: \"192.168.0.0/16\"|  value: \"%s\"|' {{.CacheDir}}/calico.yaml", podCidr),
-				"grep -q '^ *- name: CALICO_IPV4POOL_CIDR' {{.CacheDir}}/calico.yaml",
-				fmt.Sprintf("grep -q '^ *value: \"%s\"' {{.CacheDir}}/calico.yaml", podCidr),
-			},
-			Hosts: []string{masterNode.IP},
-		}
-	default:
-		// 走不到：validateK8sClusterConfig 已经拒过了。留着是为了万一将来加了取值
-		// 忘了同步这里时，报错指向的是"没实现"而不是静默不装 CNI。
+	catalog, err := loadK8sCatalog()
+	if err != nil {
+		return err
+	}
+
+	// 只认这两个名字：清单目录里放着别的资源也不能当 CNI 装。
+	// 取值范围在 validateK8sClusterConfig 已经拦过一遍，这里是第二道，
+	// 免得将来加了取值忘了同步清单时静默不装 CNI。
+	if cni != cniFlannel && cni != cniCalico {
 		return fmt.Errorf("不支持的网络插件: %s", k8s.Cni)
+	}
+
+	res, err := resourceFromCatalog(catalog, cni, k8s.CniVersion, []string{masterNode.IP})
+	if err != nil {
+		return err
 	}
 
 	if err := installer.NewInstaller().Install(res, false); err != nil {

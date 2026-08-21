@@ -52,6 +52,11 @@ type K8sConfig struct {
 	PauseImageVersion string `yaml:"pauseImageVersion"`
 	CniPluginsVersion string `yaml:"cniPluginsVersion"`
 	RuncVersion       string `yaml:"runcVersion"`
+	// Resources 指定这套集群按什么顺序装哪些东西，按 configs/k8s/ 里的资源名引用。
+	// 留空则按 containerRuntime 取默认组合（见 defaultK8sResources），
+	// 想加一样自己的东西时把默认那几项抄下来再往后追加。
+	// 网络插件不写在这里：它由 cni 选定，且必须夹在 kubeadm init 与 worker 加入之间。
+	Resources []string `yaml:"resources"`
 }
 
 type SwarmConfig struct {

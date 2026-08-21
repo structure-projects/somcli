@@ -1,0 +1,16 @@
+# /opt/cni/bin 下那批 CNI 二进制插件。
+#
+# 注意它不是网络方案本身：flannel / calico 是另外两个资源。少了这一包，
+# 网络方案的 Pod 起得来但配不出网卡，节点仍然 NotReady。
+#
+# 名字不能叫 containerd —— 幂等状态按名字+版本记，两条资源同名会互相覆盖，
+# "这台机器装过 cni-plugins 没有"就永远查不到正确答案。
+resources:
+  - name: "cni-plugins"
+    version: "1.5.1"
+    urls:
+      - "https://github.com/containernetworking/plugins/releases/download/v{{.Version}}/cni-plugins-linux-amd64-v{{.Version}}.tgz"
+    target: "{{.Filename}}"
+    post_install:
+      - "mkdir -p /opt/cni/bin"
+      - "tar Cxzvf /opt/cni/bin {{.CacheDir}}/cni-plugins-linux-amd64-v{{.Version}}.tgz"

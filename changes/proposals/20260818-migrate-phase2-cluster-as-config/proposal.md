@@ -100,13 +100,13 @@ k8s 安装当前**结构上不可能成功**：
 
 ## 验收标准
 
-- [ ] `grep -c "types.Resource{" pkg/cluster/` 结果为 0
+- [x] `grep -c "types.Resource{" pkg/cluster/` 结果为 0
 - [ ] `test/matrix.yaml` 中 21 个 `phase: 2` 场景全部 done，累计 70 done
 - [ ] E2E 单节点在选定矩阵内全绿；双节点 worker Join 成功（D4）且跨节点 Pod 互通（D5）
 - [ ] `cluster remove` 后无 `/etc/kubernetes` 残留
-- [ ] 多 master 无 VIP 时明确拒绝并给出指引（F9）
+- [x] 多 master 无 VIP 时明确拒绝并给出指引（F9）
 - [ ] F11 死代码清零（`go vet` + 人工 grep 双确认）
-- [ ] `configs/k8s/` 随发布产物一起打包
+- [x] ~~`configs/k8s/` 随发布产物一起打包~~ 改为编译进二进制，见「偏差 13」
 - [ ] changelog 补条目，配置键变更单列为 BREAKING
 
 ## 任务清单
@@ -260,11 +260,98 @@ kube 三件套（几百兆），一晚上的额度全花在下载上。改为全
 SC-K10（NodePort）从 `single_node_test.go` 移到 `multi_node_test.go`：
 单 master 带 control-plane 污点，普通 Pod 调度不上去，NodePort 后面没有后端可言。
 
+### 偏差 13：安装清单编译进二进制 + 环境变量覆盖，取代"打包带上 configs/k8s"
+
+方案的 M2.3 写的是「`install.sh` / `Makefile` / `go.yml` 打包带上 `configs/k8s/`」。
+实际改为 `//go:embed configs/k8s/*.yaml` 编译进二进制，另给一个 `SOMCLI_K8S_CATALOG`
+环境变量指向替代目录。
+
+理由：`install.sh` 只拷一个二进制，从来不分发 `configs/`。改成"必须有配置文件"的话，
+装好的 somcli 第一次 `cluster create` 就会因为找不到 `configs/k8s` 而失败，
+而用户完全看不出自己少拿了什么东西 —— 这比"要改就得重编译"糟得多。
+
+- 嵌入的代码只能写在仓库根的 `package main`：`go:embed` 的路径不能穿 `..`，
+  而这批 YAML 必须留在 `configs/` 下（用户要能看见、能照着改）。
+  `main` 通过 `cluster.SetBuiltinK8sCatalog` 注入，`pkg/cluster` 自己不嵌入任何东西。
+- `SOMCLI_K8S_CATALOG` 是**取代**而不是合并：合并的语义下，用户以为自己换掉了
+  containerd 的装法、实际用的还是内置那份，而两者的差别要到节点上才暴露。
+- 指向一个不存在的目录当场报错，不静默退回内置清单。
+- 由此「完成标准」里的「`configs/k8s/` 随发布产物一起打包」不再适用：产物就是二进制本身。
+
+### 偏差 14：新增两条 CI 静态守卫
+
+外置之后有两类错在本机与 PR 门禁上都看不见，`ci.yml` 的 `static` 各补一条：
+
+- **`configs/k8s` 用到的 `{{.Vars.xxx}}` 必须有人注入**：模板渲染开着 `missingkey=error`，
+  用了一个 `cluster create` 不注入的变量，整条命令会在节点上报 `map has no entry for key`，
+  而那要等每晚的 e2e 才看得到。守卫把 `configs/k8s/*.yaml` 里的变量名与
+  `setK8sTemplateVars` 对齐。（只查 `*.yaml`：同目录 README 也写着这些变量名，那是文档。）
+- **`pkg/cluster` 内不得有 `types.Resource{` 字面量**：这正是本里程碑的验收项
+  「资源定义字面量为 0」，写成守卫才不会被下一次改动悄悄破坏。
+
+两条都验过会红：临时给 flannel.yaml 加一个 `{{.Vars.nosuchvar}}`、临时留一个字面量，
+各自都能让流水线失败。
+
+### 偏差 15：模板变量多一层优先级 `computedVars`
+
+外置的清单要拿到 Pod 网段、镜像仓库这些集群级的值，于是 `pkg/utils` 的变量合并
+从两层（配置文件 `vars:` < `--set`）变成三层，somcli 自己推导出来的值排最高。
+
+理由：允许 `--set podNetworkCidr=...` 覆盖，就等于允许 CNI 清单里的网段与实际下发给
+`kubeadm --pod-network-cidr` 的值对不上，而那种错的表现是跨节点 Pod 不通，
+不是"配错了"。
+
+配套一条写法约定（记在 `configs/k8s/README.md`）：**"没配这一项"要用 shell 判空表达**
+（`if [ -n "{{.Vars.x}}" ]`），不要用模板的 `{{if}}` —— 命令是逐条下发的，
+渲染成空串的那条会变成一条空命令下发到节点。
+
+### 偏差 16：`docker` 资源仍然强制重装，只是记下来
+
+`base-dependencies` 与 `docker` 两条不看幂等状态、每次 `cluster create` 都重跑
+（`alwaysApply`）。前者是必须的：`swapoff` 与 `modprobe` 的效果重启就没了，
+状态库却会说"装过了"，结果是重启后再装一次集群，kubeadm 在 preflight 被 swap 挡住。
+
+后者看着像是当年顺手写的，没有同样的理由。但这次只搬家不改行为，原样保留并记在此处。
+
+### 偏差 17：`cluster create --force` 接线（原「待办」）
+
+与 `install --force` 同义：不看幂等状态重装一遍。原来的说明写的是
+"Force creation even if prechecks fail"，但它从来不影响预检（跳预检是 `--skip-precheck`），
+说明与行为都改掉了。
+
+`CreateSwarmCluster` 的 `force` 参数仍然没有消费点 —— Swarm 那条路的资源安装还没走
+通用引擎，留到 M2.4 的 Swarm 那一档一起看。
+
+### 偏差 18：`swarmConfig` 顺带修了 advertise/listen 无条件拼接
+
+方案只要求给 `defaultAddrPool` / `subnetSize` / `dataPathPort` 接线（这三个键此前在
+类型里有、却从没人读，配了完全没有效果，而这三件事装完就改不了了）。实际发现
+`--advertise-addr` 与 `--listen-addr` 是无条件拼上去的：配置里不写就成了
+`docker swarm init --advertise-addr  --listen-addr `，docker 报的是标志缺参数，
+看不出是配置少了两个键。一并改为逐项判空。
+
+`subnetSize` 只在给了地址池时才拼：单独给掩码长度，docker 直接报错。
+
+### 偏差 19：`apply` 的覆盖（SC-C06）只能在 cluster 组
+
+`apply` 先认当前机器上是什么集群，认不出直接退 1 —— 在操作机上永远只能验到
+"没有集群"这一个分支。而 somcli 是在**节点上**才看得到集群的（kubeconfig 在 master 的
+`$HOME/.kube` 下），因此 `test/cluster/manifest_test.go` 把二进制送进 master 再在那儿执行，
+与用户登上 master 敲命令是同一回事。
+
+判据取"集群里真的多了这个对象"，不取退出码：打印 "Resources applied successfully"
+这件事本身不需要任何东西真的生效。成对留了反面（喂一份不是清单的文件必须非 0 退出）。
+
+节点上那份二进制单独按 `GOOS=linux` 编：TestMain 编的那份是给操作机用的，
+操作机可能是 macOS，否则这条用例会挂在"二进制格式不对"这种与被测行为无关的地方。
+
 ### 待办：`cluster create --force` 是个死标志
 
 `cmd/cluster.go` 读了 `--force` 并传进 `CreateK8sCluster`，但该参数在整个 k8s
 安装流程里没有任何消费点 —— 加了 `--force` 与不加完全一样，装过的资源仍按状态跳过。
 本里程碑不动它（改动会牵到 `installer.Force` 的传递路径），记在此处待 M2.3 外置时一并处理。
+
+**M2.3 已处理**：见「偏差 17」。
 
 ### E2E 前置：宿主上做的三件事
 

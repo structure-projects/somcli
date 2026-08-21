@@ -1,0 +1,27 @@
+# docker 静态包。
+#
+# 只对 k8s 1.23 及以下有意义：dockershim 在 1.24 已从 kubelet 移除，
+# 更高版本还要用 docker 就得节点上先有 cri-dockerd（somcli 尚不支持，
+# cluster create 会在连节点之前拒绝这种组合）。
+resources:
+  - name: "docker"
+    version: "20.10.24"
+    urls:
+      - "https://download.docker.com/linux/static/stable/x86_64/docker-{{.Version}}.tgz"
+    target: "{{.Name}}-{{.Version}}.tgz"
+    extra_files:
+      /etc/docker/daemon.json: |
+        {
+          "exec-opts": ["native.cgroupdriver=systemd"],
+          "log-driver": "json-file",
+          "log-opts": {"max-size": "100m"},
+          "storage-driver": "overlay2"
+        }
+    post_install:
+      - "tar xzvf {{.CacheDir}}/{{.Name}}-{{.Version}}.tgz -C /usr/local/bin"
+      - "chmod +x /usr/local/bin/docker*"
+      - "groupadd docker || true"
+      - "usermod -aG docker $USER"
+      - "mkdir -p /etc/docker"
+      - "systemctl enable docker"
+      - "systemctl start docker"

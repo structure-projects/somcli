@@ -1,0 +1,17 @@
+# flannel 网络插件。
+#
+# 走 method: manifest（kubectl apply），只在 master 上执行。
+resources:
+  - name: "flannel"
+    version: "0.25.6"
+    method: "manifest"
+    urls:
+      - "https://github.com/flannel-io/flannel/releases/download/v{{.Version}}/kube-flannel.yml"
+    target: "{{.Filename}}"
+    pre_install:
+      # 清单里写死 10.244.0.0/16。与 kubeadm --pod-network-cidr 不一致时，
+      # Pod 拿到的地址不在集群网段里，表现是跨节点不通而不是"配错了"。
+      - "sed -i 's|10.244.0.0/16|{{.Vars.podNetworkCidr}}|g' {{.CacheDir}}/kube-flannel.yml"
+      # 改完必须验：清单换过键名/格式时 sed 匹配不上也退 0，
+      # 那就成了"改过了"的假象，而错要到跨节点通信时才暴露。
+      - "grep -q '{{.Vars.podNetworkCidr}}' {{.CacheDir}}/kube-flannel.yml"

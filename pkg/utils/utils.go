@@ -50,6 +50,13 @@ var (
 	// 合并成一个 map 就分不清哪个值来自哪一层了。
 	configVars   = map[string]string{}
 	overrideVars = map[string]string{}
+
+	// computedVars 是 somcli 自己算出来的变量，当前只有集群编排在写：
+	// 外置到 configs/k8s/*.yaml 的资源要拿到 Pod 网段、镜像仓库这些集群级的值。
+	// 优先级排在 --set 之上，因为这些值必须与实际下发给 kubeadm 的参数一致 ——
+	// 允许被覆盖就等于允许 CNI 清单里的网段和 --pod-network-cidr 对不上，
+	// 而那种错要到跨节点 Pod 不通时才暴露。
+	computedVars = map[string]string{}
 )
 
 // SetConfigVars 记录配置文件 vars: 段声明的变量。
@@ -62,13 +69,21 @@ func SetOverrideVars(vars map[string]string) {
 	overrideVars = vars
 }
 
-// TemplateVars 返回合并后的自定义变量：--set 覆盖配置文件。
+// SetComputedVars 记录由 somcli 推导出来的变量，优先级最高。见 computedVars 的说明。
+func SetComputedVars(vars map[string]string) {
+	computedVars = vars
+}
+
+// TemplateVars 返回合并后的自定义变量：somcli 推导值 > --set > 配置文件。
 func TemplateVars() map[string]string {
-	merged := make(map[string]string, len(configVars)+len(overrideVars))
+	merged := make(map[string]string, len(configVars)+len(overrideVars)+len(computedVars))
 	for k, v := range configVars {
 		merged[k] = v
 	}
 	for k, v := range overrideVars {
+		merged[k] = v
+	}
+	for k, v := range computedVars {
 		merged[k] = v
 	}
 	return merged

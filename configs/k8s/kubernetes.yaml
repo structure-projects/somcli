@@ -1,0 +1,20 @@
+# kubeadm / kubelet / kubectl 三件套与 kubelet 的单元文件。
+resources:
+  - name: "kubernetes"
+    version: "1.28.2"
+    urls:
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubeadm"
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubelet"
+      - "https://dl.k8s.io/v{{.Version}}/bin/linux/amd64/kubectl"
+      - "https://structured.oss-cn-beijing.aliyuncs.com/somwork/service/kubelet.service"
+    target: "{{.Filename}}"
+    post_install:
+      - "install -o root -g root -m 0755 {{.CacheDir}}/kubeadm /usr/local/bin/kubeadm"
+      - "install -o root -g root -m 0755 {{.CacheDir}}/kubelet /usr/local/bin/kubelet"
+      - "install -o root -g root -m 0755 {{.CacheDir}}/kubectl /usr/local/bin/kubectl"
+      - "mkdir -p /etc/systemd/system/kubelet.service.d"
+      - "install -o root -g root -m 0644 {{.CacheDir}}/kubelet.service /etc/systemd/system/kubelet.service"
+      - "systemctl daemon-reload"
+      # kubelet 在 kubeadm init 之前起不来是正常的（没有配置文件），它会反复重启，
+      # 等 init 写下 /var/lib/kubelet/config.yaml 之后自己转正常。
+      - "systemctl enable --now kubelet"

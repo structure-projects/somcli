@@ -91,7 +91,11 @@ func init() {
 	clusterCreateCmd.Flags().StringP("file", "f", "", "Cluster configuration file (required)")
 	clusterCreateCmd.Flags().String("cluster-name", "", "Which cluster in the config to create (see cluster[].name)")
 	clusterCreateCmd.Flags().String("cluster-type", "", "Which cluster type in the config to create (k8s|swarm)")
-	clusterCreateCmd.Flags().Bool("force", false, "Force creation even if prechecks fail")
+	// 原来的说明是"Force creation even if prechecks fail"，但它从来不影响预检
+	// （跳预检是 --skip-precheck），而 k8s 流程里根本没人读这个标志。
+	// 现在与 install --force 同义：不看幂等状态重装一遍。
+	clusterCreateCmd.Flags().Bool("force", false,
+		"Re-apply resources even if check: hits or state.json already records them")
 	clusterCreateCmd.Flags().Bool("skip-precheck", false, "Skip pre-installation checks")
 	_ = clusterCreateCmd.MarkFlagRequired("file")
 

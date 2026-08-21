@@ -44,15 +44,20 @@
 
 ## M2.3 外置结构（单独提交，最高风险点）
 
-- [ ] 把 `pkg/cluster/kubernetes.go` 中四个硬编码 `types.Resource` 搬到 `configs/k8s/*.yaml`（先保持等价，不改行为）
-- [ ] 跑一次 E2E 确认仍绿
-- [ ] `ClusterConfig`/`K8sConfig` 补 `resources` 字段；`cluster create` 改为按名称引用组装并交给引擎执行
-- [ ] `SwarmConfig` 的 `DefaultAddrPool`/`SubnetSize`/`DataPathPort` 接线或明确移除
-- [ ] ~~`method: manifest` 走 `kubectl apply`（SC-M06）~~ 已在 M2.2 实现（D5 要用它装 CNI），
-      本阶段只补 `apply` 命令的覆盖（SC-C06）
-- [ ] `install.sh` / `Makefile` / `go.yml` 打包带上 `configs/k8s/`
-- [ ] 断言 `pkg/cluster` 内 `types.Resource` 字面量为 0
-- [ ] 再跑一次 E2E 确认仍绿
+- [x] 把 `pkg/cluster/kubernetes.go` 中四个硬编码 `types.Resource` 搬到 `configs/k8s/*.yaml`（先保持等价，不改行为）
+      —— 实际是 8 个资源：base-dependencies / cni-plugins / runc / containerd / docker / kubernetes / flannel / calico
+- [ ] 跑一次 E2E 确认仍绿（每晚一次，流水线还没跑到）
+- [x] `ClusterConfig`/`K8sConfig` 补 `resources` 字段；`cluster create` 改为按名称引用组装并交给引擎执行
+      —— 名字写错在连节点之前就拒绝，报错列出可用名单（SC-K16）
+- [x] `SwarmConfig` 的 `DefaultAddrPool`/`SubnetSize`/`DataPathPort` 接线或明确移除
+      —— 接线，顺带修 `--advertise-addr`/`--listen-addr` 无条件拼接（见 proposal「偏差 18」）
+- [x] ~~`method: manifest` 走 `kubectl apply`（SC-M06）~~ 已在 M2.2 实现（D5 要用它装 CNI），
+      本阶段只补 `apply` 命令的覆盖（SC-C06）—— `test/cluster/manifest_test.go`，见 proposal「偏差 19」
+- [x] ~~`install.sh` / `Makefile` / `go.yml` 打包带上 `configs/k8s/`~~ 改为 `go:embed` 编译进二进制
+      + `SOMCLI_K8S_CATALOG` 覆盖（SC-K17），见 proposal「偏差 13」
+- [x] 断言 `pkg/cluster` 内 `types.Resource` 字面量为 0 —— `ci.yml` 静态守卫，另加一条模板变量守卫（「偏差 14」）
+- [x] 顺带处理原「待办」：`cluster create --force` 接线（「偏差 17」）
+- [ ] 再跑一次 E2E 确认仍绿（同上）
 
 ## M2.4 多 master / 生命周期 / Swarm / 清理
 
