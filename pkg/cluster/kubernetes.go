@@ -786,7 +786,7 @@ func joinWorkerNodes(config *types.ClusterConfig) error {
 		utils.PrintStage(fmt.Sprintf("正在加入工作节点: %s", node.Host))
 		startTime := time.Now()
 
-		output, err := utils.RunCommandOnNode(&node, " "+joinCommand)
+		output, err := utils.RunCommandOnNode(&node, joinCommand)
 		if err != nil {
 			utils.PrintError("工作节点加入失败: %v", err)
 			return fmt.Errorf("工作节点%s加入失败: %w\n输出: %s", node.Host, err, output)
@@ -903,6 +903,11 @@ func RemoveK8sCluster(config *types.ClusterConfig, force bool) error {
 	startTime := time.Now()
 	utils.PrintBanner(fmt.Sprintf("正在移除Kubernetes集群: %s", config.Cluster.Name))
 	utils.PrintInfo("开始时间: %s", startTime.Format("2006-01-02 15:04:05"))
+
+	// 补默认值：reset 要带 --cri-socket，而端点取的是 containerRuntime。
+	// 不补的话配置里没写 runtime 时会按 containerd 拼端点，docker 集群的 reset
+	// 就会因为检测到多个 socket 又没显式指定而失败。
+	applyK8sDefaults(config)
 
 	if !force {
 		if !utils.AskForConfirmation("确定要移除Kubernetes集群吗？") {

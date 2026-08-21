@@ -149,7 +149,7 @@ func AddK8sNode(config *types.ClusterConfig, host string, force bool) error {
 		if err != nil {
 			return err
 		}
-		if output, err := utils.RunCommandOnNode(target, " "+joinCmd); err != nil {
+		if output, err := utils.RunCommandOnNode(target, joinCmd); err != nil {
 			return fmt.Errorf("工作节点%s加入失败: %w\n输出: %s", target.Host, err, output)
 		}
 	}
