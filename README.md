@@ -38,8 +38,10 @@ somcli (structure-ops-cli) 是一个统一的容器管理工具，提供从基�
 ### 安装 somcli
 
 ```bash
-# 二进制安装
-curl -L "https://github.com/structure-projects/somcli/releases/latest/download/somcli-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/')" -o /usr/local/bin/somcli
+# 二进制安装（支持 linux/darwin × amd64/arm64）
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -L "https://github.com/structure-projects/somcli/releases/latest/download/somcli-${os}-${arch}" -o /usr/local/bin/somcli
 chmod +x /usr/local/bin/somcli
 
 # 验证安装

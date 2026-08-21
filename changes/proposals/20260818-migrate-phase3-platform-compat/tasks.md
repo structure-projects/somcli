@@ -37,10 +37,12 @@
 
 ## M3.4 构建矩阵归一
 
-- [ ] `build.sh` / `Makefile build-all` / `go.yml` / `ci.yml` 收敛为单一来源
-- [ ] 按定论处理 windows 产物（保留则四处一致；移除则同步 README 与 changelog）
-- [ ] 修 `install.sh` 的 arm64 / `aarch64` 识别；修 `install.sh`/`build.sh` shebang 位置
-- [ ] `README` 安装脚本段与实际产物名一致
+- [x] `build.sh` / `Makefile build-all` / `go.yml` / `ci.yml` 收敛为单一来源
+  - `build.sh` 为唯一来源（4 目标，cmd.Version ldflags）；`Makefile build-all` 与 `go.yml` 均委托它；`ci.yml` 交叉编译矩阵同步为 4 目标
+- [x] 按定论处理 windows 产物（保留则四处一致；移除则同步 README 与 changelog）
+  - 已移除：Makefile 不再产出 .exe，ci.yml 矩阵删除 windows/amd64，go.yml 本就不上传；README 标注支持范围；changelog 于归档时单列 BREAKING
+- [x] 修 `install.sh` 的 arm64 / `aarch64` 识别；修 `install.sh`/`build.sh` shebang 位置
+- [x] `README` 安装脚本段与实际产物名一致（补 aarch64→arm64 映射）
 
 ## M3.5 周边子系统覆盖
 

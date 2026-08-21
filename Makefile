@@ -9,17 +9,18 @@ BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 all: build
 
+LD_FLAGS := -X github.com/structure-projects/somcli/cmd.Version=$(VERSION) \
+            -X github.com/structure-projects/somcli/cmd.BuildDate=$(BUILD_DATE)
+
 build:
 	@echo "Building $(BINARY_NAME) version $(VERSION) for $(GOOS)/$(GOARCH)..."
-	go build -o bin/$(BINARY_NAME) -ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)" main.go
+	go build -o bin/$(BINARY_NAME) -ldflags "$(LD_FLAGS)" .
 
+# 全平台构建以 build.sh 为单一来源，勿在此另列 GOOS/GOARCH —— 两处一旦漂移，
+# 发出去的产物就是两套。
 build-all:
-	@echo "Building for all platforms..."
-	mkdir -p bin
-	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY_NAME)-linux-amd64 -ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)" main.go
-	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY_NAME)-darwin-amd64 -ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)" main.go
-	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY_NAME)-windows-amd64.exe -ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)" main.go
-	GOOS=linux GOARCH=arm64 go build -o bin/$(BINARY_NAME)-linux-arm64 -ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)" main.go
+	@echo "Building for all platforms via build.sh..."
+	./build.sh
 
 clean:
 	@echo "Cleaning build artifacts..."

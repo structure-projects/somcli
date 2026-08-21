@@ -117,7 +117,6 @@ jobs:
           - { goos: linux, goarch: arm64 }
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
-          - { goos: windows, goarch: amd64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -125,7 +124,7 @@ jobs:
           go-version: '1.24'
           cache: true
 
-      # SC-P10：5 平台交叉编译产物可用。
+      # SC-P10：4 平台交叉编译产物可用（linux/darwin × amd64/arm64，不含 windows）。
       # 编到真实文件而非 /dev/null，这样能顺带断言产物非空；
       # 与宿主同架构的那一组再跑一次 version，证明产物真的能执行。
       - name: 编译

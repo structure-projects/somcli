@@ -696,7 +696,7 @@ scenarios:
     status: pending
 
   - id: SC-P10
-    desc: 5 平台交叉编译产物可用
+    desc: 4 平台交叉编译产物可用（linux/darwin × amd64/arm64，windows 已移除）
     env: [matrix]
     files: [.github/workflows/ci.yml]
     defects: []

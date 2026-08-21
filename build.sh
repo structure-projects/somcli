@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # somcli build
 # Copyright [2023] [Structure Projects]
@@ -13,7 +14,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#!/bin/bash
+#
+# 构建矩阵的单一来源：linux/darwin × amd64/arm64，共 4 个产物。
+# 不再产出 windows 二进制 —— 本工具依赖 sh/ssh/scp/systemctl，Windows 不在支持范围。
+# Makefile 的 build-all 与 .github/workflows/go.yml 都委托本脚本，请勿在别处另列目标。
 
 # 版本信息配置
 VERSION="v1.0.0"
