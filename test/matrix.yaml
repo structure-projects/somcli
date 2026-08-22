@@ -792,3 +792,11 @@ scenarios:
     defects: [G9]
     phase: 4
     status: done
+
+  - id: SC-X11
+    desc: source 配置 official/aliyun/iso 在 method: package 装包前自动配好目标节点软件源
+    env: [local]
+    files: [test/local/source_test.go]
+    defects: [F12]
+    phase: 3
+    status: done

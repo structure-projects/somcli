@@ -12,7 +12,7 @@
 | 提案目标 | 结论 | 证据 |
 |---|---|---|
 | F10 发行版抽象（yum/dnf/apt/zypper/apk） | ✅ | `pkg/utils/packagemanager.go`；`method_package.go` 瘦身到只取包名 + sudo；`integration.yml` distros job 覆盖 6 镜像 |
-| F12 `--source` 有真实行为或移除 | ✅ | 选择移除：`cmd/root.go`、`types/resource.go`、`utils/os.go`（InitSource 删除）、`configs/config.yaml`（mirrors_source 删除）。BREAKING，changelog 待补 |
+| F12 `--source` 有真实行为或移除 | ✅ | 评审时选择移除空壳；**评审后经用户要求改为重新实现**：删除从未生效的 `--source` 标志/`mirrors_source:`/`utils.InitSource`，新增可用的顶层 `source:` 配置块（official/aliyun/iso）+ `utils.RenderSourceSetup`，由 `method: package` 装包前自动前置。黑盒覆盖见 `test/local/source_test.go`。BREAKING，changelog 已列迁移写法 |
 | arm64 架构参数化 | ✅ | `configs/**` 与 `configs/k8s/**` 改用 `{{.Arch}}`/`{{.UnameArch}}`；`kubernetes.go` 由 amd64 硬限改为 amd64/arm64 两档放行，arm64 k8s 集群安装标注实验性 |
 | 构建矩阵单一来源 | ✅ | `build.sh` 为唯一来源（4 目标，cmd.Version ldflags，shebang 归位）；`Makefile build-all` 与 `go.yml` 委托它；`ci.yml` 矩阵同步为 4 目标；windows 移除。BREAKING，changelog 待补 |
 | install.sh/README 架构识别 | ✅ | `install.sh` 用 case 映射 x86_64/amd64→amd64、aarch64/arm64→arm64；README 安装命令补 aarch64→arm64 |
@@ -31,7 +31,7 @@
 
 - [x] S1｜`build.sh` 硬编码 `VERSION="v1.0.0"` → 已改为 `git describe --tags --always --dirty`（与 Makefile 同源），发版产物版本号不再写死。
 - [ ] S2｜SC-C03 harbor 安装的本地覆盖止于入参校验与 docker/docker-compose 前置依赖检查，真正的下载→解压→渲染 harbor.yml→跑 install.sh 这条链没有自动化覆盖。受限于"本地不联网、不起真 docker"的黑盒纪律可以理解，但应在 `integration.yml`/`e2e.yml` 里有一条带假 harbor 包或真 harbor 的用例兜底，否则这段重构后无人看守。
-- [ ] S3｜两个 BREAKING（移除 `--source` 持久标志、移除 windows 产物）的 changelog 条目尚未写入。tasks.md 已列为归档必做项，归档前必须补齐迁移写法（`--source` 本就无真实行为、可直接删；windows 用户需切 WSL/Linux 操作机）。
+- [x] S3｜两个 BREAKING（用 `source:` 替换空壳 `--source`/`mirrors_source`、移除 windows 产物）的 changelog 条目已写入 `changes/changelog/0.5.0-alpha.md`，含迁移写法。
 
 ## 评审中发现并修复的问题
 

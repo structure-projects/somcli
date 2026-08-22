@@ -1,0 +1,8 @@
+# 验证 source: aliyun 真把源切到阿里云镜像并能装出包。
+# 供 integration.yml 的 source-aliyun job 使用：容器里默认是上游官方源，
+# somcli 先 sed 成 mirrors.aliyun.com 再刷新元数据、装 make。
+source:
+  mode: aliyun
+resources:
+  - name: make
+    method: package

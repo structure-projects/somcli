@@ -1,6 +1,12 @@
 offline: true
 debug: true
 github_proxy: https://gh-proxy.com/
+# 装系统包（method: package）前在目标节点上配软件源。留空或 official 用系统自带默认源。
+# source:
+#   mode: aliyun            # official（默认）/ aliyun（国内镜像）/ iso（本地 ISO）
+#   # mode: iso 时 ISO 在目标节点上的绝对路径（需预先分发到目标，somcli 只挂载不配源）：
+#   iso: /mnt/CentOS-7-x86_64.iso
+#   mount: /mnt/somcli-iso  # 挂载点，留空取 /mnt/somcli-iso
 resources:
   # 下载系统镜像
   # - name: "centos"

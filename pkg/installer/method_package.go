@@ -42,5 +42,16 @@ func installPackage(res types.Resource) ([]string, error) {
 		sudo = "sudo "
 	}
 
-	return []string{utils.RenderPkgCommand(utils.PkgInstall, pkg, sudo)}, nil
+	cmds := []string{}
+	// 装包前先按顶层 source: 配置在目标节点上把软件源配好（换源/挂 ISO）。
+	// official 或留空返回空串，等价于用系统自带默认源直接装。
+	setup, err := utils.RenderSourceSetup(utils.Config.Source, sudo)
+	if err != nil {
+		return nil, err
+	}
+	if setup != "" {
+		cmds = append(cmds, setup)
+	}
+	cmds = append(cmds, utils.RenderPkgCommand(utils.PkgInstall, pkg, sudo))
+	return cmds, nil
 }

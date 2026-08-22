@@ -29,9 +29,14 @@
 
 ## M3.3 换源与离线（F12）
 
-- [x] `--source` 由 `BoolVar` 改为 `StringSliceVar`（或按定论移除该标志）
-  - 定论：直接移除。该能力从未真正实现（`InitSource` 的 .sh/.iso 是空函数体），留着是 BREAKING 假象；changelog 单列。
-- [x] 实现 `utils.InitSource` 的 `.sh` / `.iso` 两个分支（或移除并同步文档，不留空函数体）
+- [x] F12 换源能力落地（先按"移除空壳"评审，经用户要求改为重新实现）
+  - 删除从未生效的 `--source` 标志、`mirrors_source:` 段与空函数体 `utils.InitSource`（BREAKING，旧配置严格解析会报错）；
+  - 新增顶层 `source:` 配置块 + `types.SourceConfig` + `utils.RenderSourceSetup`，三模式：
+    `official`（默认不改源）/ `aliyun`（apt/dnf/yum/zypper/apk sed 成阿里云镜像并刷新元数据，
+    CentOS 7 指向 vault）/ `iso`（挂载目标节点上已有 ISO 成本地源，yum/dnf 三 baseurl + apt file://）；
+  - `method: package` 在装包前自动前置该 setup shell；探测与执行都在目标节点。
+  - 黑盒覆盖：`test/local/source_test.go` 六例（official 无动作、aliyun apt/dnf 刷新、
+    iso 挂载+makecache、缺 iso 路径报错、未知 mode 报错）。
 - [x] `SOMCLI_OFFLINE` 与 `--offline` 语义一致性复核（SC-X03 三子项 + 不开离线均绿）
 - [x] 操作机矩阵：Linux amd64 / Linux arm64 / macOS arm64（SC-P08/P09，由 ci.yml test matrix 承载，转绿前保持 pending）
 
@@ -60,7 +65,7 @@
 ## 测试
 
 - [x] `go test ./...` 全绿（含 `go vet` 四组 build tag：remote/multinode/cluster/swarm）
-- [~] `test/matrix.yaml` 本机可验部分 **55/90 done**
+- [~] `test/matrix.yaml` 本机可验部分 **56/91 done**（新增 SC-X11 source 三模式）
   - 剩余 35 项全部为 CI/集成承载：distro 矩阵（SC-P01..P06）、arm64/操作机矩阵（SC-P07..P09）、
     真集群/真 swarm（SC-K*/SC-S*）、多节点（SC-D10）、远程 SSH（SC-F03）、manifest apply（SC-C06/M06）、
     节点 docker 安装（SC-C01/C02）。这些按既定方针在 CI 转绿前保持 pending，不靠本机臆造 done。

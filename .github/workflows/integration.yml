@@ -168,3 +168,50 @@ jobs:
           /tmp/somcli --workdir /tmp/somwork install -f test/fixtures/base-deps.yaml
 
           make --version
+
+  # F12 换源端到端：容器里默认是上游官方源，somcli 先切成阿里云镜像再装 make。
+  # 本地黑盒（test/local/source_test.go）只验命令编排，sed 规则对不对、镜像站通不通，
+  # 必须在真发行版里跑一次才知道。apt 与 dnf 各取一格（ubuntu/rocky），其余包管理器的
+  # 分支结构相同，由本地用例覆盖。
+  source-aliyun:
+    name: 换源 aliyun (SC-X11, ${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - 'ubuntu:22.04'   # apt
+          - 'rockylinux:9'   # dnf
+    container:
+      image: ${{ matrix.image }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 补齐构建前置依赖
+        run: |
+          set -eux
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates curl tar gzip git
+          elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y ca-certificates curl tar gzip git
+          fi
+      - uses: actions/checkout@v4
+      - name: 装 Go
+        run: |
+          set -eux
+          curl -fsSL https://go.dev/dl/go1.24.0.linux-amd64.tar.gz -o /tmp/go.tgz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tgz
+          echo /usr/local/go/bin >> "$GITHUB_PATH"
+      - name: "source: aliyun 后装 make"
+        run: |
+          set -eux
+          if command -v make >/dev/null 2>&1; then
+            echo "镜像里已自带 make，这条验不出东西"
+            exit 1
+          fi
+          go build -o /tmp/somcli .
+          /tmp/somcli --workdir /tmp/somwork install -f test/fixtures/source-aliyun.yaml
+          make --version

@@ -25,11 +25,33 @@ type ResourceConfig struct {
 	GithubProxy string            `yaml:"github_proxy"`
 	WorkDir     string            `yaml:"workdir"`
 	Vars        map[string]string `yaml:"vars,omitempty"` // 自定义模板变量，模板里以 {{.Vars.xxx}} 访问
+	Source      *SourceConfig     `yaml:"source,omitempty"`
 
 	Resources []Resource    `yaml:"resources,omitempty"`
 	Nodes     []RemoteNode  `yaml:"nodes"`
 	Clusters  []ClusterSpec `yaml:"cluster,omitempty"`
 	Images    []Image       `yaml:"images,omitempty"`
+}
+
+// SourceConfig 描述"装系统包前先把软件源配好"（换源）。
+//
+// 国内环境下不配源，apt/yum 装基础工具就可能超时或失败；离线环境则要挂 ISO 当本地源。
+// 它是节点级前置动作：method: package 在目标节点上装包前会先按这里的配置换好源。
+// 探测与执行都发生在**目标节点**上（与 pkg/utils/packagemanager.go 同一纪律），
+// 所以操作机是什么发行版无关。
+type SourceConfig struct {
+	// Mode 三选一，留空按 official 处理：
+	//   official —— 不改源，用系统自带默认源；
+	//   aliyun   —— 换成阿里云镜像（apt/dnf/yum/zypper/apk）；
+	//   iso      —— 挂载目标节点上的 ISO 作为本地源（yum/dnf 与 apt）。
+	Mode string `yaml:"mode"`
+
+	// ISO 是 mode=iso 时 ISO 在**目标节点**上的绝对路径。
+	// ISO 体积大，应由文件资源或离线介质预先分发到目标，somcli 只负责挂载与配源。
+	ISO string `yaml:"iso"`
+
+	// Mount 是 ISO 的挂载点，留空取 /mnt/somcli-iso。
+	Mount string `yaml:"mount"`
 }
 
 // Resource 单个资源定义
