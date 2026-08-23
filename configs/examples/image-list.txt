@@ -1,0 +1,4 @@
+# 镜像清单示例：纯文本写法，每行一个 name:tag，# 开头是注释。
+# somcli images pull/push/export 的 -f/-i 都认这种写法。
+nginx:1.25
+busybox:1.36

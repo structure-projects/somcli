@@ -29,13 +29,13 @@
 
 ## M4.3 文档重建（按核心优先顺序，每份独立提交）
 
-- [ ] `doc/02-资源编排.md`（核心，填 G3）：字段全表、两个模板上下文的变量表、`method` 六种语义、`hosts`/`nodes` 对应、`pre/post/remove_scripts`、`vars`、幂等与 `on_error`
-- [ ] `doc/01-概念与架构.md`：资源 / 节点 / 编排模型、四步生命周期、引擎与上层命令的关系
-- [ ] `doc/03-环境初始化.md`：换源、离线模式、缓存目录布局
-- [ ] `doc/04-场景-工具编排.md`：kubectl / helm / jq 三种 method 实战
-- [ ] `doc/05-场景-业务服务编排.md`：部署/升级/回滚/多环境参数化
-- [ ] `doc/06-场景-Kubernetes.md`（重写）：runtime 与 1.24 分界、CNI、多 master、版本矩阵
-- [ ] `doc/07-场景-Swarm.md`（重写）
+- [x] `doc/02-资源编排.md`（核心，填 G3）：字段全表、两个模板上下文的变量表、`method` 六种语义、`hosts`/`nodes` 对应、`pre/post/remove_scripts`、`vars`、幂等与 `on_error`
+- [x] `doc/01-概念与架构.md`：资源 / 节点 / 编排模型、四步生命周期、引擎与上层命令的关系
+- [x] `doc/03-环境初始化.md`：换源、离线模式、缓存目录布局
+- [x] `doc/04-场景-工具编排.md`：kubectl / helm / jq 三种 method 实战
+- [x] `doc/05-场景-业务服务编排.md`：部署/升级/回滚/多环境参数化
+- [x] `doc/06-场景-Kubernetes.md`（重写）：runtime 与 1.24 分界、CNI、多 master、版本矩阵
+- [x] `doc/07-场景-Swarm.md`（重写）
 - [ ] `doc/08-镜像管理.md` / `doc/09-仓库管理.md` / `doc/10-离线部署.md`（原 images/registry/offline 修正并改名）
 - [ ] `doc/12-平台兼容矩阵.md`：与 M3 实测结果对应，逐格标支持级别（完整/实验/不支持）
 - [ ] `doc/13-故障排查.md`：常见错误与定位方法
