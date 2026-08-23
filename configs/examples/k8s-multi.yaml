@@ -1,0 +1,44 @@
+# 三 master 高可用 Kubernetes 集群示例。
+#
+# 多 master 的硬性要求：controlPlaneEndpoint 指向一个不随单机存亡的 apiserver 入口
+# （VIP 或负载均衡）。证书与 kubeconfig 都指向它，缺了它另外两个 master 无从加入，
+# validate / cluster create 会在连节点之前直接拒绝。
+#
+# 用法：
+#   somcli validate -f configs/examples/k8s-multi.yaml
+#   somcli cluster create -f configs/examples/k8s-multi.yaml
+#
+# 172.20.10.10 是 apiserver VIP（示例地址，换成你自己的 VIP/LB）。
+
+cluster:
+  - type: "k8s"
+    name: "my-k8s-ha"
+    nodes:
+      - host: "k8s-master-01"
+        ip: "172.20.10.11"
+        role: "master"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "k8s-master-02"
+        ip: "172.20.10.12"
+        role: "master"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "k8s-master-03"
+        ip: "172.20.10.13"
+        role: "master"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "k8s-worker-01"
+        ip: "172.20.10.23"
+        role: "worker"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+    k8sConfig:
+      version: "1.30.0"
+      controlPlaneEndpoint: "172.20.10.10:6443"
+      podNetworkCidr: "10.244.0.0/16"
+      serviceCidr: "10.96.0.0/12"
+      containerRuntime: "containerd"
+      cni: "calico"
+      imageRepository: "registry.aliyuncs.com/google_containers"

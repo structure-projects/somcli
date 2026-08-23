@@ -1,0 +1,32 @@
+# 单 master Kubernetes 集群示例（cluster create 形态）。
+#
+# 与 configs/kubernetes-cluster.yaml（把每一步写在 resources[].post_install 里）不同，
+# 这里只声明"要什么样的集群"，装什么由内置安装清单 configs/k8s/*.yaml 决定。
+#
+# 用法：
+#   somcli validate -f configs/examples/k8s-single.yaml
+#   somcli cluster create -f configs/examples/k8s-single.yaml
+#
+# 改成真实环境：替换 host/ip/sshKey；多 master 见 k8s-multi.yaml（必须配 controlPlaneEndpoint）。
+
+cluster:
+  - type: "k8s"
+    name: "my-k8s"
+    nodes:
+      - host: "k8s-master"
+        ip: "172.20.10.11"
+        role: "master"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "k8s-worker-01"
+        ip: "172.20.10.23"
+        role: "worker"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+    k8sConfig:
+      version: "1.30.0"
+      podNetworkCidr: "10.244.0.0/16"
+      serviceCidr: "10.96.0.0/12"
+      containerRuntime: "containerd"
+      cni: "flannel"
+      imageRepository: "registry.aliyuncs.com/google_containers"

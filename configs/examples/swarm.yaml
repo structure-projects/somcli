@@ -1,0 +1,37 @@
+# Docker Swarm 集群示例（cluster create 形态）。
+#
+# 至少一个 role: manager 的节点；其余节点作为 worker 加入。manager 上执行 docker swarm init，
+# somcli 取回 join token 后在其余节点 docker swarm join。
+#
+# 用法：
+#   somcli validate -f configs/examples/swarm.yaml
+#   somcli cluster create -f configs/examples/swarm.yaml
+#
+# 前提：所有节点已装好 docker（somcli 不替 swarm 装 docker）。
+
+cluster:
+  - type: "swarm"
+    name: "my-swarm"
+    nodes:
+      - host: "swarm-mgr-01"
+        ip: "192.168.1.10"
+        role: "manager"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "swarm-node-01"
+        ip: "192.168.1.11"
+        role: "worker"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+      - host: "swarm-node-02"
+        ip: "192.168.1.12"
+        role: "worker"
+        user: "root"
+        sshKey: "~/.ssh/id_rsa"
+    swarmConfig:
+      advertiseAddr: "192.168.1.10"
+      listenAddr: "0.0.0.0:2377"
+      defaultAddrPool:
+        - "10.20.0.0/16"
+      subnetSize: 24
+      dataPathPort: 4789
