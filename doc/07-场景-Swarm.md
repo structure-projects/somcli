@@ -1,5 +1,7 @@
 # 场景：Docker Swarm 集群
 
+> 覆盖验收场景：SC-S01、SC-S02、SC-S03、SC-S04、SC-S05、SC-S06、SC-C01。
+
 `somcli cluster create` 在节点上初始化 Docker Swarm。完整示例：
 [`configs/examples/swarm.yaml`](../configs/examples/swarm.yaml)
 （单 manager 版见 [`configs/swarm-cluster.yaml`](../configs/swarm-cluster.yaml)）。

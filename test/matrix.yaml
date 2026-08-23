@@ -800,3 +800,19 @@ scenarios:
     defects: [F12]
     phase: 3
     status: done
+
+  - id: SC-X12
+    desc: 全部场景 ID 在人工文档中出现（文档与验收清单不漂移）
+    env: [local]
+    files: [test/local/doc_scenarios_test.go]
+    defects: [G3]
+    phase: 4
+    status: done
+
+  - id: SC-X13
+    desc: 场景文档不内联可独立运行的配置（完整示例走 configs/examples/ 引用）
+    env: [local]
+    files: [test/local/doc_scenarios_test.go]
+    defects: [G3]
+    phase: 4
+    status: done

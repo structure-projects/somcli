@@ -16,7 +16,7 @@
 - [x] `hack/genmatrix`：由命令树 + `test/matrix.yaml` 渲染 `doc/00-功能清单与矩阵.md`（分组从 matrix 的 `# --- SC-X 标题 ---` 注释提取，不硬编码）
 - [x] 两份生成文件页首标注"本文件由 hack/ 生成，请勿手改"
 - [x] `ci.yml` 增 `docs` job：重新生成 + `git diff --exit-code`；Makefile 增 `docs/gendoc/genmatrix` 目标
-- [ ] `test/local/docs_test.go`：校验全部场景 ID（当前 91 个）在场景文档中出现 —— 挪到 M4.3 写完场景文档后再启用，否则现在必红
+- [x] `test/local/doc_scenarios_test.go`：校验全部场景 ID（SC-X12，当前 93 个）在人工文档中出现；M4.3 写完场景文档后启用
 
 ## M4.2 配置归一（G1 / G2 / G7）
 
@@ -46,17 +46,17 @@
 
 ## M4.4 防漂移机制收口（5 项全部在 CI 生效）
 
-- [ ] `doc/11` 由 `cobra/doc` 生成 + `git diff --exit-code`
-- [ ] `doc/00` 由命令树 + `matrix.yaml` 渲染 + `git diff --exit-code`
-- [ ] `doc_commands_test.go` 校验文档示例命令与标志真实存在（跑二进制 `--help`）
-- [ ] `doc_scenarios_test.go` 校验 82 个场景 ID 在场景文档中出现（纯文本比对，不 import `pkg/`）
-- [ ] 场景文档示例配置必须是 `configs/examples/` 下真实文件（禁止内联独立 YAML）
+- [x] `doc/11` 由 `cobra/doc` 生成 + `git diff --exit-code`
+- [x] `doc/00` 由命令树 + `matrix.yaml` 渲染 + `git diff --exit-code`
+- [x] `doc_commands_test.go` 校验文档示例命令与标志真实存在（跑二进制 `--help`，SC-X04）
+- [x] `doc_scenarios_test.go` 校验全部场景 ID 在人工文档中出现（SC-X12，纯文本比对，不 import `pkg/`）
+- [x] 场景文档示例配置必须是 `configs/examples/` 下真实文件（SC-X13，禁止内联独立 YAML）
 
 ## 测试
 
-- [ ] `go test ./...` 全绿
-- [ ] `configs/**` 全部通过二进制校验（严格解析 + 模板渲染 + 引用完整性）
-- [ ] `configs/examples/remote-3node.yaml` 被 multinode 组真实执行
+- [x] `go test ./...` 全绿
+- [x] `configs/**` 全部通过二进制校验（严格解析 + 模板渲染 + 引用完整性；`configs/k8s/` 为编译进二进制的安装清单片段，非独立配置，SC-X05 已排除）
+- [x] `configs/examples/remote-3node.yaml` 被 multinode 组真实执行（SC-E07）
 
 ## 评审
 

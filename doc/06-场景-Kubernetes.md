@@ -1,5 +1,7 @@
 # 场景：Kubernetes 集群
 
+> 覆盖验收场景：SC-K01、SC-K02、SC-K03、SC-K04、SC-K05、SC-K06、SC-K07、SC-K08、SC-K09、SC-K10、SC-K11、SC-K12、SC-K13、SC-K14、SC-K15、SC-K16、SC-K17、SC-C06。
+
 `somcli cluster create` 按配置在多台节点上装一套 Kubernetes。集群"是什么样"由
 `cluster[].k8sConfig` 声明，"装什么"由内置安装清单 `configs/k8s/*.yaml` 决定——
 你不需要手写 kubeadm/containerd 的安装脚本。
