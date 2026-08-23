@@ -1,0 +1,46 @@
+# 业务服务编排示例：用 vars 参数化一份可部署的服务。
+#
+# 演示四件事：
+#   1. vars 提供环境相关参数（镜像仓库/副本数/端口），用 --set 或 vars: 覆盖；
+#   2. 资源带 version，升级 = 改 version 后重跑 install（state.json 按版本判幂等）；
+#   3. extra_files 把模板化的配置文件落到目标节点；
+#   4. remove_scripts 定义卸载，uninstall 逆序执行。
+#
+# 用法：
+#   somcli validate -f configs/examples/webservice.yaml
+#   somcli install  -f configs/examples/webservice.yaml
+#   # 换一套环境参数：
+#   somcli --set env=staging --set replicas=3 install -f configs/examples/webservice.yaml
+#   # 升级：把下面的 version 改大再 install；回滚 = 改回旧 version 再 install
+#   somcli uninstall -f configs/examples/webservice.yaml
+
+vars:
+  env: "production"
+  replicas: "2"
+  port: "8080"
+  image_repo: "registry.example.com/webservice"
+
+resources:
+  - name: "webservice-config"
+    version: "1.0.0"
+    method: "script"
+    extra_files:
+      "/etc/webservice/webservice.env": |
+        ENV={{.Vars.env}}
+        PORT={{.Vars.port}}
+        REPLICAS={{.Vars.replicas}}
+        IMAGE={{.Vars.image_repo}}:{{.Version}}
+    post_install:
+      - "echo 配置已写入 /etc/webservice/webservice.env"
+    remove_scripts:
+      - "rm -f /etc/webservice/webservice.env"
+
+  - name: "webservice"
+    version: "1.0.0"
+    method: "container"
+    install_dir: "/usr/local/bin"
+    image: "{{.Vars.image_repo}}:{{.Version}}"
+    post_install:
+      - "echo 部署 {{.Vars.image_repo}}:{{.Version}} 到 {{.Vars.env}}（{{.Vars.replicas}} 副本，端口 {{.Vars.port}}）"
+    remove_scripts:
+      - "rm -f /usr/local/bin/webservice"
