@@ -203,6 +203,18 @@ func k8sResourceNames(config *types.ClusterConfig) []string {
 	return defaultK8sResources(config.Cluster.K8sConfig.ContainerRuntime)
 }
 
+// ValidateConfigRefs 校验一套集群配置里对安装清单的引用是否都存在。
+//
+// 专供 cmd/validate 在不动节点的前提下提前拦截"资源名写错"：k8sConfig.resources 里点名的
+// 每个资源、以及显式选定的 cni，都必须在内置（或 SOMCLI_K8S_CATALOG 指定的）清单里。
+// 非 k8s 集群没有清单概念，直接跳过。
+func ValidateConfigRefs(spec types.ClusterSpec) error {
+	if !strings.EqualFold(strings.TrimSpace(spec.Type), "k8s") {
+		return nil
+	}
+	return validateK8sResourceNames(&types.ClusterConfig{Cluster: spec})
+}
+
 // validateK8sResourceNames 在连节点之前确认要装的东西都在清单里。
 //
 // 一并把网络插件也查了：cni 的取值范围另有校验，但取值对、清单里却没有对应文件

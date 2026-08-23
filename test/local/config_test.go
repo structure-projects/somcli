@@ -301,6 +301,66 @@ resources:
 	}
 }
 
+// TestSC_X05_ReferenceIntegrity validate 要拦住"引用了不存在的东西"。
+//
+// 模板渲染只保证变量没拼错，保证不了 hosts 点名的节点真的声明了、k8sConfig.resources
+// 点名的清单资源真的存在。这两类错误原来要等到连节点装到一半才报，现在 validate 阶段就拦下。
+func TestSC_X05_ReferenceIntegrity(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+		cfg  string
+	}{
+		{
+			name: "SC-X05/hosts 点名了未声明节点",
+			want: "node-zzz",
+			cfg: `
+nodes:
+  - host: "node-a"
+    ip: "172.28.0.11"
+resources:
+  - name: "tool"
+    version: "1.0"
+    hosts:
+      - "node-zzz"
+    post_install:
+      - "true"
+`,
+		},
+		{
+			name: "SC-X05/k8s resources 引用了清单里没有的资源",
+			want: "no-such-resource",
+			cfg: `
+cluster:
+  - type: "k8s"
+    name: "k"
+    nodes:
+      - host: "m"
+        ip: "10.0.0.1"
+        role: "master"
+    k8sConfig:
+      version: "1.28.2"
+      resources:
+        - "no-such-resource"
+`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writeConfig(t, tc.cfg)
+			code, out := runIn(t, t.TempDir(), "validate", "-f", cfg)
+			if code == 0 {
+				t.Fatalf("引用不完整却验过了，输出：\n%s", out)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("错误信息没指向 %q，输出：\n%s", tc.want, out)
+			}
+		})
+	}
+}
+
 // TestSC_X09_OneConfigServesEveryScenario 一份配置要能在所有场景下加载，
 // 各命令只取自己那一段。
 //
@@ -389,16 +449,26 @@ func exampleConfigs(t *testing.T) []string {
 	t.Helper()
 
 	dir := filepath.Join(repoRoot, "configs")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("读取 configs/ 失败: %v", err)
-	}
-
 	var configs []string
-	for _, e := range entries {
-		if name := e.Name(); strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-			configs = append(configs, filepath.Join(dir, name))
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		// configs/k8s/ 是编译进二进制的安装清单（catalogFile 结构），不是 ResourceConfig，
+		// 不走 validate。examples/ 与顶层一样是完整示例，必须验。
+		if d.IsDir() {
+			if d.Name() == "k8s" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if name := d.Name(); strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+			configs = append(configs, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历 configs/ 失败: %v", err)
 	}
 	return configs
 }

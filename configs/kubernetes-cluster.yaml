@@ -1,11 +1,11 @@
-# Kubernetes 集群安装示例（单文档，当前 schema）
+# Kubernetes 集群安装示例（统一 schema：单文档，nodes + resources）。
 #
-# 原版这里写的是 `version: / kind: Download|Resource|App|Node|source` 五个 YAML 文档，
-# 外加资源级 roles: / files: / extra_files: —— 加载器只读第一个文档，其余的键也没有任何
-# 代码消费，等于整篇都不生效。这一版只用真实存在的字段重写：
-#   * 多文档与 kind 分发未实现 -> 合成单文档
-#   * 资源级 roles: 未实现 -> 用 hosts: 点名节点
-#   * files: / extra_files: 未实现 -> 需要的产物走 urls: + target: 下载，或在脚本里落盘
+# 早期版本是 `kind: Download|Resource|App|Node|source` 五个 YAML 文档，外加 flows /
+# depends_on / Apps / roles / sources —— 加载器只读第一个文档，其余全部静默失效。
+# 那些未实现的声明式设计与逐条改写指引见 doc/roadmap.md。
+#
+# 这一版只用真实存在的字段：节点在 nodes: 声明，每个资源用 hosts: 点名落到哪些节点，
+# 需要的产物走 urls: + target: 下载，落盘文件走 extra_files:。
 #
 # 用法：somcli install -f configs/kubernetes-cluster.yaml
 

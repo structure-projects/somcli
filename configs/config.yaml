@@ -41,14 +41,6 @@ resources:
       - "https://github.com/docker/compose/releases/download/v{{.Version}}/docker-compose-linux-{{.UnameArch}}"
     target: "{{.Name}}"
   - name: "cri-dockerd"
-    version: "0.3.17"
-    method: "binary"
-    urls:
-      - "https://github.com/Mirantis/cri-dockerd/releases/download/v{{.Version}}/cri-dockerd-{{.Version}}.{{.Arch}}.tgz"
-      - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service"
-      - "https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket"
-    target: "{{.Filename}}"
-  - name: "cri-dockerd"
     version: "0.3.9"
     method: "binary"
     urls:

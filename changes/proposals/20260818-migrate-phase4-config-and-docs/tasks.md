@@ -20,12 +20,12 @@
 
 ## M4.2 配置归一（G1 / G2 / G7）
 
-- [ ] schema 归一到 `config.yaml` 形态；`kubernetes-cluster.yaml` 的 `flows`/`depends_on`/`Apps`/`sources` 移入 `doc/roadmap.md`
-- [ ] `nodes[].roles`（复数）与 `role`（单数）统一
-- [ ] 新增 `configs/examples/remote-3node.yaml`：**真实可运行的远程编排样例**（由 multinode 组真实执行）
-- [ ] G7 清理：`tools.yaml` 的 `hosts:`→`nodes:`、`config.yaml` 重复的 cri-dockerd 与 `target:`、`swarm-cluster.yaml` 末尾垃圾字符 `###u7dfrdta`
-- [ ] 配置校验用例扩充：引用完整性（`cluster.resources` 名称存在、`hosts` IP 在 `nodes` 中）
-- [ ] 旧 schema 文件保留一个版本并在文档给出逐条改写指引
+- [x] schema 归一到 `config.yaml` 形态；`kubernetes-cluster.yaml` 的 `flows`/`depends_on`/`Apps`/`sources` 移入 `doc/roadmap.md`
+- [x] `nodes[].roles`（复数）与 `role`（单数）统一（代码只有单数 `role`；复数 `roles` 归入 roadmap 未实现设计）
+- [x] 新增 `configs/examples/remote-3node.yaml`：**真实可运行的远程编排样例**（由 multinode 组 SC-E07 真实执行）
+- [x] G7 清理：`config.yaml` 重复的 cri-dockerd 已删（tools.yaml/swarm-cluster.yaml 核查为干净，无历史残留）
+- [x] 配置校验用例扩充：引用完整性（`k8sConfig.resources`/`cni` 名称在清单中、`hosts` 命中 `nodes`），SC-X05 覆盖
+- [x] 旧 schema 逐条改写指引写入 `doc/roadmap.md` §5
 
 ## M4.3 文档重建（按核心优先顺序，每份独立提交）
 

@@ -1,0 +1,51 @@
+# 远程三节点编排示例：一份配置把资源分发到三台独立主机上执行。
+#
+# nodes: 声明"有哪些机器"；resources[].hosts: 点名"这个资源落到哪些机器"。
+# 未写 hosts 的资源在操作机本地执行；hosts 里的每一项必须命中 nodes[].host 或 ip，
+# 否则 validate / install 会报"无法解析主机"（只有 localhost / 127.0.0.1 / ::1 例外）。
+#
+# 这三个节点对应 test/fixtures/multinode 的三节点（172.28.0.11-13），
+# 由 multinode 测试组（go test -tags=multinode ./test/multinode）真实执行。
+#
+# 用法：
+#   somcli validate -f configs/examples/remote-3node.yaml
+#   somcli install  -f configs/examples/remote-3node.yaml
+#
+# 改成你自己的环境：把 host / ip 换成真实主机，sshKey 换成私钥路径，
+# post_install 换成真正要在节点上执行的命令。
+
+nodes:
+  - host: "node-a"
+    ip: "172.28.0.11"
+    role: "worker"
+    user: "root"
+    sshKey: "~/.ssh/id_rsa"
+  - host: "node-b"
+    ip: "172.28.0.12"
+    role: "worker"
+    user: "root"
+    sshKey: "~/.ssh/id_rsa"
+  - host: "node-c"
+    ip: "172.28.0.13"
+    role: "worker"
+    user: "root"
+    sshKey: "~/.ssh/id_rsa"
+
+resources:
+  # 点名三台：脚本分别在各自节点上执行，产物落在各自的文件系统里。
+  - name: "all-nodes-marker"
+    version: "1.0"
+    hosts:
+      - "node-a"
+      - "node-b"
+      - "node-c"
+    post_install:
+      - "mkdir -p /opt/somcli-demo && cat /etc/hostname > /opt/somcli-demo/node.txt"
+
+  # hosts 也接受 IP；只点名一台，演示定向编排。
+  - name: "node-a-only"
+    version: "1.0"
+    hosts:
+      - "172.28.0.11"
+    post_install:
+      - "echo installed-on-a > /opt/somcli-demo/target.txt"

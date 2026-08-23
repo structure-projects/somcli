@@ -23,6 +23,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/structure-projects/somcli/pkg/cluster"
 	"github.com/structure-projects/somcli/pkg/types"
 	"github.com/structure-projects/somcli/pkg/utils"
 	"gopkg.in/yaml.v2"
@@ -89,6 +90,7 @@ func validateFile(path string) (problems []string, summary string, err error) {
 
 	problems = append(problems, validateResources(config.Resources)...)
 	problems = append(problems, validateClusters(config.Clusters)...)
+	problems = append(problems, validateHostRefs(config)...)
 
 	return problems, fmt.Sprintf("%d 个资源，%d 个节点，%d 套集群，%d 个镜像，全部可解析",
 		len(config.Resources), len(config.Nodes), len(config.Clusters), len(config.Images)), nil
@@ -121,6 +123,53 @@ func validateClusters(clusters []types.ClusterSpec) []string {
 			problems = append(problems, fmt.Sprintf("%s: 集群名重复", where))
 		}
 		seen[c.Name] = true
+
+		// k8sConfig.resources / cni 是对内置安装清单的按名引用，名字写错要等到真的连节点
+		// 装到一半才报错。这里只读清单、不动节点，提前拦下来。
+		if err := cluster.ValidateConfigRefs(c); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", where, err))
+		}
+	}
+
+	return problems
+}
+
+// validateHostRefs 校验每个资源的 hosts 都能解析到已声明节点。
+//
+// 与安装时 utils.GetNode 的判定保持一致：hosts 项命中某个 nodes[].host/ip 才算数，
+// 只有 localhost / 127.0.0.1 / ::1 这种显式本机字面量可以不经 nodes 声明。
+// 名字写错时在 validate 就报错，而不是装到一半才发现"无法解析主机"。
+func validateHostRefs(config *types.ResourceConfig) []string {
+	var problems []string
+
+	declared := map[string]bool{}
+	for _, n := range config.Nodes {
+		if n.Host != "" {
+			declared[n.Host] = true
+		}
+		if n.IP != "" {
+			declared[n.IP] = true
+		}
+	}
+
+	for i, res := range config.Resources {
+		where := fmt.Sprintf("resources[%d]", i)
+		if res.Name != "" {
+			where = fmt.Sprintf("resources[%d] (%s)", i, res.Name)
+		}
+		for _, host := range res.Hosts {
+			if utils.IsLocalHostLiteral(host) || declared[host] {
+				continue
+			}
+			if len(config.Nodes) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: hosts 项 %q 无法解析：配置中没有声明 nodes，远程目标必须先在 nodes: 里声明",
+					where, host))
+			} else {
+				problems = append(problems, fmt.Sprintf(
+					"%s: hosts 项 %q 不在已声明节点中（nodes 的 host/ip 才算数）", where, host))
+			}
+		}
 	}
 
 	return problems
