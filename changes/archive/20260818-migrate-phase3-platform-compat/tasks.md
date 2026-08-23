@@ -78,13 +78,13 @@
 
 ## 归档
 
-- [ ] changelog 补条目，`--source` 类型变更与 windows 产物决定单列
-- [ ] `git mv changes/proposals/20260818-migrate-phase3-platform-compat/ changes/archive/`
-- [ ] `current-proposal` 切到 `20260818-migrate-phase4-config-and-docs`
+- [x] changelog 补条目（`changes/changelog/0.5.0-alpha.md`）：`source:` 替换空壳 `--source`/`mirrors_source` 与 windows 产物移除两条 BREAKING 单列，含迁移写法
+- [x] `git mv changes/proposals/20260818-migrate-phase3-platform-compat/ changes/archive/`
+- [x] `current-proposal` 切到 `20260818-migrate-phase4-config-and-docs`
 
 ## 提交与推送
 
-- [ ] 通过 ci-gate
-- [ ] commit message 符合 Conventional Commits
-- [ ] 分支为 `feat-platform-compat`
-- [ ] 推送需用户确认
+- [x] 本地 ci-gate：`go build ./...`、`go vet`（含 remote/multinode/cluster/swarm 四组 tag）、gofmt、本地黑盒全套均绿；test/ 无 import pkg/ 守卫通过
+- [x] commit message 符合 Conventional Commits
+- [x] 分支为 `feat-platform-compat`
+- [ ] 推送：经用户授权后推送（CI 矩阵项 SC-P07..P09 / distros / source-aliyun 在远端转绿前保持 pending）
