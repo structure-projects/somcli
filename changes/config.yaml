@@ -22,7 +22,7 @@ extra-require-confirm: []
 
 # 显式指针：当前活跃提案（changes/proposals/<current>/），供编排器定位；
 # 多 agent 并发场景下先检查 status 字段再操作；完成后置空或切换。
-current-proposal: "20260818-migrate-phase4-config-and-docs"
+current-proposal: ""
 
 # autonomous 模式下项目形态（project-form）的全局 fallback 选择。
 # fallback 链：stack-constraints.<stack>.project-form.default（栈级，最高）
