@@ -60,9 +60,9 @@
 
 ## 评审
 
-- [ ] 通过 expert-review（产出 `review.md`）
-- [ ] 修复所有 MUST fix 项
-- [ ] SHOULD fix 项已评估
+- [x] 通过 expert-review（产出 `review.md`，结论：通过，无 MUST fix）
+- [x] 修复所有 MUST fix 项（无）
+- [x] SHOULD fix 项已评估并修复（SC-C01/C02 锚点归位）
 
 ## 归档
 

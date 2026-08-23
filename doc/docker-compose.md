@@ -1,5 +1,7 @@
 # `somcli docker-compose` 使用文档
 
+> 覆盖验收场景：SC-C02。
+
 ## 1. 功能概述
 
 - **Compose 环境管理**：一键安装/卸载 Docker Compose
