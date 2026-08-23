@@ -36,13 +36,13 @@
 - [x] `doc/05-场景-业务服务编排.md`：部署/升级/回滚/多环境参数化
 - [x] `doc/06-场景-Kubernetes.md`（重写）：runtime 与 1.24 分界、CNI、多 master、版本矩阵
 - [x] `doc/07-场景-Swarm.md`（重写）
-- [ ] `doc/08-镜像管理.md` / `doc/09-仓库管理.md` / `doc/10-离线部署.md`（原 images/registry/offline 修正并改名）
-- [ ] `doc/12-平台兼容矩阵.md`：与 M3 实测结果对应，逐格标支持级别（完整/实验/不支持）
-- [ ] `doc/13-故障排查.md`：常见错误与定位方法
-- [ ] `doc/roadmap.md`：归档未实现设计
-- [ ] `doc/设计.md` 与 `doc/提案-架构收敛与测试体系.md` 页首加注为历史记录
-- [ ] `README.md` 重写为导航 + 5 分钟上手，含旧文档链接映射；删除不存在的 `internal/`
-- [ ] 修 G6 遗留：k8s 版本描述与 configs 一致
+- [x] `doc/08-镜像管理.md` / `doc/09-仓库管理.md` / `doc/10-离线部署.md`（原 images/registry/offline 修正并改名）
+- [x] `doc/12-平台兼容矩阵.md`：与 M3 实测结果对应，逐格标支持级别（完整/实验/不支持）
+- [x] `doc/13-故障排查.md`：常见错误与定位方法
+- [x] `doc/roadmap.md`：归档未实现设计
+- [x] `doc/设计.md` 与 `doc/提案-架构收敛与测试体系.md` 页首加注为历史记录
+- [x] `README.md` 重写为导航 + 5 分钟上手，含旧文档链接映射；删除不存在的 `internal/`
+- [x] 修 G6 遗留：k8s 版本描述与 configs 一致（cluster.md 版本表更正）
 
 ## M4.4 防漂移机制收口（5 项全部在 CI 生效）
 

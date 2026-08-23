@@ -1,309 +1,113 @@
-# somcli 容器管理工具 - 完整文档
+# somcli
 
-## 目录
+somcli（structure-ops-cli）是一个"环境初始化 + 服务/工具编排"引擎：
+用一份 YAML 声明要装什么、在哪些节点上装，somcli 负责下载、渲染、分发、执行和记录状态。
+Docker / Kubernetes / Swarm 集群安装是它的一类应用场景，而不是全部。
 
-- [项目概述](#项目概述)
-- [功能特性](#功能特性)
-- [快速开始](#快速开始)
-- [核心模块](#核心模块)
-  - [Docker 管理](#docker-管理)
-  - [Docker Compose 管理](#docker-compose-管理)
-  - [镜像管理](#镜像管理)
-  - [Registry 管理](#registry-管理)
-  - [集群管理](#集群管理)
-  - [离线管理](#离线管理)
-  - [Swarm 管理](#swarm-管理)
-  - [Kubernetes 管理](#kubernetes-管理)
-- [配置参考](#配置参考)
-- [开发指南](#开发指南)
-- [常见问题](#常见问题)
-- [设计架构](#设计架构)
-
-## 项目概述
-
-somcli (structure-ops-cli) 是一个统一的容器管理工具，提供从基础设施到应用部署的全生命周期管理。它整合了 Docker、Docker Compose、Harbor、Swarm 和 Kubernetes 等主流容器技术，通过一致的命令行界面简化运维工作。
-
-## 功能特性
-
-- **全栈支持**：统一管理 Docker、Compose、Swarm 和 Kubernetes
-- **一键部署**：自动化安装和配置容器环境
-- **镜像全生命周期**：拉取、推送、导出、导入一站式操作
-- **企业级仓库**：内置 Harbor 仓库管理
-- **离线支持**：完整离线部署解决方案
-- **代理加速**：内置 GitHub 代理支持
-- **灵活配置**：支持配置文件和变量
-
-## 快速开始
-
-### 安装 somcli
+## 5 分钟上手
 
 ```bash
-# 二进制安装（支持 linux/darwin × amd64/arm64）
+# 1. 安装二进制（linux/darwin × amd64/arm64）
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 curl -L "https://github.com/structure-projects/somcli/releases/latest/download/somcli-${os}-${arch}" -o /usr/local/bin/somcli
 chmod +x /usr/local/bin/somcli
-
-# 验证安装
 somcli version
+
+# 2. 挑一份示例配置，先校验再装
+somcli validate -f configs/examples/k8s-single.yaml
+somcli cluster create -f configs/examples/k8s-single.yaml
 ```
 
-### 基础工作流
+更多示例在 [`configs/examples/`](configs/examples/)：单/多 master k8s、swarm、
+工具编排（kubectl/helm/jq）、业务服务、三节点远程编排。
+
+## 常用命令
 
 ```bash
-# 1. 安装 Docker 环境
-somcli docker install --version 20.10.12
+# 配置与编排
+somcli validate -f config.yaml          # 只校验，不安装
+somcli install -f config.yaml           # 装配置里的资源
+somcli install -f config.yaml -n <name> # 只装某一个资源
+somcli uninstall -f config.yaml         # 按 remove_scripts 卸载
+somcli status                           # 看装过什么、装在哪
 
-# 2. 部署 Harbor 仓库
-somcli registry install -h harbor.example.com
+# 集群
+somcli cluster create -f config.yaml
+somcli cluster create --cluster-type swarm -f config.yaml
+somcli cluster add-node -f config.yaml --node <host>
+somcli cluster remove -f config.yaml
 
-# 3. 部署 Kubernetes 集群
-somcli cluster create -f cluster.yaml
+# 镜像与仓库
+somcli images pull -f configs/examples/image-list.txt
+somcli images export -f configs/examples/image-list.txt -o images.tar.gz
+somcli images import -i images.tar.gz
+somcli registry install -H harbor.example.com -v v2.5.0
+
+# 离线
+somcli download -f config.yaml          # 联网机预热缓存
+somcli install --offline -f config.yaml # 内网机只认缓存
 ```
 
-## 核心模块
+全局标志 `--config` / `--github-proxy` / `--workdir` / `--debug` / `--offline` /
+`--set` 写在子命令后面。完整命令与标志见 [`doc/11-命令参考.md`](doc/11-命令参考.md)。
 
-### Docker 管理
+## 文档导航
 
-[完整文档](./doc/docker.md)
+| 文档 | 内容 |
+|---|---|
+| [00 功能清单与矩阵](doc/00-功能清单与矩阵.md) | 全部场景与验证状态（自动生成） |
+| [01 概念与架构](doc/01-概念与架构.md) | 资源/节点模型、四步生命周期、代码结构 |
+| [02 资源编排](doc/02-资源编排.md) | 配置字段全表、六种 method、模板变量、幂等 |
+| [03 环境初始化](doc/03-环境初始化.md) | 换源、离线模式、工作目录布局 |
+| [04 场景-工具编排](doc/04-场景-工具编排.md) | kubectl / helm / jq 实战 |
+| [05 场景-业务服务编排](doc/05-场景-业务服务编排.md) | 部署/升级/回滚/多环境 |
+| [06 场景-Kubernetes](doc/06-场景-Kubernetes.md) | runtime 分界、CNI、多 master、版本矩阵 |
+| [07 场景-Swarm](doc/07-场景-Swarm.md) | manager/worker、swarmConfig |
+| [08 镜像管理](doc/08-镜像管理.md) | pull/push/export/import |
+| [09 仓库管理](doc/09-仓库管理.md) | Harbor 安装、镜像同步 |
+| [10 离线部署](doc/10-离线部署.md) | 联网机准备 → 内网机安装 |
+| [11 命令参考](doc/11-命令参考.md) | 所有命令与标志（自动生成） |
+| [12 平台兼容矩阵](doc/12-平台兼容矩阵.md) | OS/架构/发行版支持级别 |
+| [13 故障排查](doc/13-故障排查.md) | 常见报错与定位 |
+| [roadmap](doc/roadmap.md) | 未实现设计的归档 |
+
+`doc/设计.md` 与 `doc/提案-*.md` 是历史记录，命令名以 11-命令参考为准。
+
+## 旧文档链接映射
+
+旧的平铺文档已拆分重命名：
+
+| 旧文件 | 新文档 |
+|---|---|
+| `doc/images.md` | [08-镜像管理](doc/08-镜像管理.md) |
+| `doc/registry.md` | [09-仓库管理](doc/09-仓库管理.md) |
+| `doc/offline.md` | [10-离线部署](doc/10-离线部署.md) |
+| `doc/cluster.md` | [06-Kubernetes](doc/06-场景-Kubernetes.md) / [07-Swarm](doc/07-场景-Swarm.md) |
+
+## 开发
 
 ```bash
-# 安装指定版本
-somcli docker install --version 24.0.6
-
-# 容器管理
-somcli docker ps -a
-somcli docker logs [容器ID]
-
-# 镜像操作
-somcli docker pull nginx:latest
-somcli docker rmi nginx:latest
+make build        # 当前平台二进制
+make build-all    # linux/darwin × amd64/arm64（委托 build.sh，单一来源）
+make test         # go test ./...
+make docs         # 重新生成 doc/00 与 doc/11
+make fmt && make vet
 ```
 
-### Docker Compose 管理
-
-[完整文档](./doc/docker-compose.md)
-
-```bash
-# 安装最新版
-somcli docker-compose install
-
-# 应用管理
-somcli docker-compose -f stack.yml up -d
-somcli docker-compose logs -f
-```
-
-### 镜像管理
-
-[完整文档](./doc/images.md)
-
-```bash
-# 批量操作
-somcli images pull -s k8s
-somcli images export -o images.tar.gz
-
-# 仓库同步
-somcli images push -r harbor.example.com
-```
-
-### Registry 管理
-
-[完整文档](./doc/registry.md)
-
-```bash
-# Harbor 安装
-somcli registry install -v v2.5.0 -h harbor.example.com
-
-# 镜像同步
-somcli registry sync -s docker.io -t harbor.example.com
-```
-
-### 集群管理
-
-[完整文档](./doc/cluster.md)
-
-```yaml
-# cluster.yaml 示例
-cluster:
-  type: "k8s"
-  nodes:
-    - host: "master1"
-      ip: "192.168.1.100"
-      role: "master"
-```
-
-```bash
-# 集群操作
-somcli cluster create -f cluster.yaml
-somcli get nodes
-```
-
-### 离线管理
-
-[完整文档](./doc/offline.md)
-
-```yaml
-# 离线配置示例
-download:
-  resources:
-    - name: "docker"
-      version: "20.10.12"
-      urls:
-        [
-          "https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz"
-        ]
-```
-
-```bash
-# 离线包操作
-somcli download -f offline.yaml
-somcli install -f offline.yaml --offline
-```
-
-### Swarm 管理
-
-```bash
-# Swarm 集群创建（节点、advertise 地址等写在配置文件里）
-somcli cluster create --cluster-type swarm -f cluster.yaml
-```
-
-### Kubernetes 管理
-
-```bash
-# K8s 集群操作
-somcli cluster create --cluster-type k8s -f cluster.yaml
-somcli get pods -A
-```
-
-## 配置参考
-
-### 全局配置 (~/.somcli.yaml)
-
-```yaml
-github_proxy: "https://gh-proxy.com/"
-docker:
-  default_version: "20.10.12"
-registries:
-  main:
-    url: "harbor.example.com"
-    username: "admin"
-```
-
-### 集群配置
-
-```yaml
-# Swarm 配置
-swarmConfig:
-  advertiseAddr: "192.168.1.200"
-  listenAddr: "0.0.0.0:2377"
-  defaultAddrPool:
-    - "10.20.0.0/16"
-  subnetSize: 24
-
-# K8s 配置
-k8sConfig:
-  version: "1.25.0"
-  podNetworkCidr: "10.244.0.0/16"
-  serviceCidr: "10.96.0.0/12"
-```
-
-## 开发指南
-
-### 构建与安装
-
-项目使用 Makefile 管理构建流程，支持以下命令：
-
-```bash
-# 构建当前平台的二进制
-make build
-
-# 构建所有平台的二进制
-make build-all
-
-# 安装到系统
-sudo make install
-
-# 卸载
-sudo make uninstall
-
-# 运行测试
-make test
-
-# 测试覆盖率
-make test-coverage
-
-# 代码格式化
-make fmt
-
-# 代码检查
-make vet
-
-# 运行 lint
-make lint
-
-# 查看所有可用命令
-make help
-```
-
-### 项目结构
+项目结构：
 
 ```
 somcli/
-├── cmd/          # CLI 入口
-├── pkg/          # 功能实现
-│   ├── cluster/  # 集群逻辑
-│   ├── docker/   # Docker 封装
-│   └── ...       # 其他模块
-├── internal/     # 内部定义
-├── configs/      # 示例配置
-└── main.go       # 程序入口
+├── cmd/          # cobra 命令定义
+├── pkg/          # 功能实现（installer / cluster / images / registry / utils ...）
+├── configs/      # 内置安装清单与示例配置（examples/）
+├── doc/          # 用户文档
+├── test/         # 黑盒功能测试（local / remote / multinode / cluster / swarm）
+├── hack/         # 文档与矩阵生成器
+├── build.sh      # 构建矩阵单一来源
+└── main.go
 ```
 
-### 添加新命令
-
-1. 在 `cmd/` 下创建命令文件
-2. 实现 Cobra 命令结构
-3. 注册到根命令
-
-## 常见问题
-
-### 安装问题
-
-```bash
-# 静默安装
-somcli docker install -y
-
-# 彻底卸载
-somcli docker uninstall -y
-```
-
-## 设计架构
-
-### 模块关系图
-
-```
-+----------------+
-|    CLI 入口    |
-+----------------+
-        |
-        v
-+----------------+    +----------------+
-|  命令解析层     |--->|  功能实现层     |
-+----------------+    +----------------+
-        |                     |
-        v                     v
-+----------------+    +----------------+
-| 配置管理系统    |    | 第三方工具集成  |
-+----------------+    +----------------+
-```
-
-### 核心设计原则
-
-1. **一致性**：统一的操作体验
-2. **可扩展**：模块化设计
-3. **灵活性**：支持多种配置方式
-4. **可靠性**：完善的错误处理
-
----
-
-通过 `somcli --help` 获取完整帮助，各子模块帮助可通过 `somcli [module] --help` 查看。
+测试是黑盒功能验证：`test/` 不 import 本仓库 `pkg/`，通过编译出的二进制驱动；
+不设覆盖率门槛。

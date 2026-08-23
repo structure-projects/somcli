@@ -1,5 +1,10 @@
 # somcli 集群管理工具使用手册
 
+> 本文为早期概览，内容可能滞后。Kubernetes 与 Swarm 的权威说明见
+> [`06-场景-Kubernetes.md`](06-场景-Kubernetes.md) 与
+> [`07-场景-Swarm.md`](07-场景-Swarm.md)，命令与标志以
+> [`11-命令参考.md`](11-命令参考.md) 为准。
+
 ## 1. 工具简介
 
 somcli 是一个容器集群管理工具，支持 Docker Swarm 和 Kubernetes 两种主流容器编排系统的部署与管理。
@@ -109,9 +114,13 @@ sshKey: "/shared/ssh/cluster-key" # 所有节点共用密钥
 
 ### A. 版本兼容性
 
-| somcli 版本 | Docker 版本 | Kubernetes 版本 |
-| ----------- | ----------- | --------------- |
-| v1.0+       | 20.10+      | 1.23-1.25       |
+| 组件 | 版本说明 |
+| --- | --- |
+| Docker | 默认 20.10.x（k8s docker 运行时） |
+| Kubernetes（containerd 运行时） | 无版本上限，示例用 1.28 / 1.30 |
+| Kubernetes（docker 运行时） | 仅 ≤ 1.23（dockershim 在 1.24 移除） |
+
+详见 [`06-场景-Kubernetes.md`](06-场景-Kubernetes.md) 的版本矩阵与运行时分界。
 
 ### B. 获取帮助
 
