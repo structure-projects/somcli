@@ -137,3 +137,24 @@ jobs:
       - name: 冒烟执行
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: ./dist/somcli-linux-amd64 version
+
+  docs:
+    name: 文档防漂移（doc/00 + doc/11）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      # 重新生成 doc/00（命令树+matrix）与 doc/11（cobra 命令参考）。
+      # 与仓库里提交的版本比对：任何 diff 都意味着改了命令/标志/场景状态却没重新生成文档。
+      - name: 重新生成文档
+        run: make docs
+      - name: 比对差异
+        run: |
+          if ! git diff --exit-code -- doc/00-功能清单与矩阵.md doc/11-命令参考.md; then
+            echo "::error::生成的文档与提交版本不一致，请在本地运行 make docs 后提交"
+            exit 1
+          fi

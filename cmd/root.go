@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -80,20 +81,26 @@ func parseSetVars(pairs []string) (map[string]string, error) {
 	return vars, nil
 }
 
-func Execute() {
-	// 添加所有子命令
-	addSubcommands()
+// rootOnce 保证 version/docker/compose 只挂一次：Execute() 与 hack/gendoc 都会拿根命令，
+// 重复 AddCommand 会在帮助里出现重复条目。
+var rootOnce sync.Once
 
-	if err := rootCmd.Execute(); err != nil {
+// NewRootCommand 返回装配好全部子命令的根命令。
+// 供 hack/gendoc 等工具在不触发 Execute 的前提下遍历命令树。
+func NewRootCommand() *cobra.Command {
+	rootOnce.Do(func() {
+		rootCmd.AddCommand(NewVersionCmd())
+		rootCmd.AddCommand(NewDockerCmd())
+		rootCmd.AddCommand(NewComposeCmd())
+	})
+	return rootCmd
+}
+
+func Execute() {
+	if err := NewRootCommand().Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-}
-
-func addSubcommands() {
-	rootCmd.AddCommand(NewVersionCmd())
-	rootCmd.AddCommand(NewDockerCmd())
-	rootCmd.AddCommand(NewComposeCmd())
 }
 
 func init() {

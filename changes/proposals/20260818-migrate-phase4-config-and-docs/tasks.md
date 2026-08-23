@@ -5,18 +5,18 @@
 
 ## 准备
 
-- [ ] M3 已归档，`current-proposal` 已切到本提案
-- [ ] 阅读 `proposal.md` 与技术附录 §4.4 / §5.2 Phase 4 / §7
-- [ ] 切 `feat-config-and-docs` 分支
-- [ ] 定论总纲待决事项 5（`doc/设计.md` 处置）
+- [x] M3 已归档，`current-proposal` 已切到本提案
+- [x] 阅读 `proposal.md` 与技术附录 §4.4 / §5.2 Phase 4 / §7
+- [x] 切 `feat-config-and-docs` 分支
+- [x] 定论总纲待决事项 5（`doc/设计.md` 处置）：保留为历史记录，页首加注"部分内容已实现/已过时，命令名以 11-命令参考 为准"
 
 ## M4.1 生成器与防漂移
 
-- [ ] `hack/gendoc`：由 `cobra/doc` 生成 `doc/11-命令参考.md`
-- [ ] `hack/genmatrix`：由命令树 + `test/matrix.yaml` 渲染 `doc/00-功能清单与矩阵.md`
-- [ ] 两份生成文件页首标注"本文件由 hack/ 生成，请勿手改"
-- [ ] `ci.yml` 增 `docs` job：重新生成 + `git diff --exit-code`
-- [ ] `test/local/docs_test.go` 扩充：校验 82 个场景 ID 在场景文档中全部出现
+- [x] `hack/gendoc`：由 `cobra/doc` 生成 `doc/11-命令参考.md`（导出 `cmd.NewRootCommand` 供工具遍历）
+- [x] `hack/genmatrix`：由命令树 + `test/matrix.yaml` 渲染 `doc/00-功能清单与矩阵.md`（分组从 matrix 的 `# --- SC-X 标题 ---` 注释提取，不硬编码）
+- [x] 两份生成文件页首标注"本文件由 hack/ 生成，请勿手改"
+- [x] `ci.yml` 增 `docs` job：重新生成 + `git diff --exit-code`；Makefile 增 `docs/gendoc/genmatrix` 目标
+- [ ] `test/local/docs_test.go`：校验全部场景 ID（当前 91 个）在场景文档中出现 —— 挪到 M4.3 写完场景文档后再启用，否则现在必红
 
 ## M4.2 配置归一（G1 / G2 / G7）
 

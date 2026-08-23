@@ -5,7 +5,7 @@ BINARY_NAME := somcli
 VERSION := $(shell git describe --tags --always --dirty)
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-.PHONY: all build clean test install uninstall fmt vet lint run help
+.PHONY: all build clean test install uninstall fmt vet lint run help docs gendoc genmatrix
 
 all: build
 
@@ -21,6 +21,15 @@ build:
 build-all:
 	@echo "Building for all platforms via build.sh..."
 	./build.sh
+
+# 文档由 hack/ 生成，CI 用 `make docs && git diff --exit-code` 守防漂移。
+gendoc:
+	go run ./hack/gendoc
+
+genmatrix:
+	go run ./hack/genmatrix
+
+docs: gendoc genmatrix
 
 clean:
 	@echo "Cleaning build artifacts..."
